@@ -9,6 +9,7 @@ venv/
 # Secrets & local data
 .env
 .chroma/
+.memory/
 *.sqlite3
 
 # Node / Cockpit

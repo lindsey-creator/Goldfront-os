@@ -22,16 +22,22 @@ Full definition lives in [`docs/master-spec.md`](docs/master-spec.md). Read that
 
 ## What works today
 
-The deterministic engine and its API endpoint are real and tested. Everything
-else is scaffolded with stubs that point at the spec section they implement.
+Real and tested: the deterministic engine, **and the full training loop** —
+memory, auto-classification, deal-decision training with divergence flagging,
+team-interaction and conversation training, decision history, and importers for
+bulk messages, Apollo, ClickUp, and Fieldy (spec §5.5). Runs with no API key and
+no ChromaDB (JSON memory fallback). Still stubbed: persona + reasoning agent.
 
 ```bash
 python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 
-pytest                                   # engine tests should all pass
-uvicorn brain.main:app --reload          # then POST to /evaluate-deal
+pytest                                   # 40 tests should pass
+uvicorn brain.main:app --reload          # /docs for every endpoint
 ```
+
+Feeding the Brain your history: see **`docs/training-and-import.md`** (includes
+how to export from Apollo). Try it now against `samples/`.
 
 ---
 
@@ -44,12 +50,14 @@ goldfront-os/
 │   ├── config.py            # encoded thresholds — change rules HERE, one place
 │   ├── main.py              # FastAPI app (/health, /evaluate-deal live)
 │   ├── engine/              # deterministic math — REAL, tested, no AI
-│   ├── memory/              # ChromaDB knowledge base (stub)
+│   ├── memory/              # knowledge base + store (Chroma or JSON) — REAL
 │   ├── persona/             # voice + decision framework (stub)
 │   ├── agent/               # Claude reasoning agent (stub)
-│   └── training/            # /train/* + divergence flagging (stub)
+│   └── training/            # /train/* + divergence + importers — REAL
+│       └── importers/       # bulk messages · Apollo · ClickUp · Fieldy
+├── samples/                 # example files to try the importers
 ├── cockpit/                 # React front end (built after the Brain works)
-└── tests/                   # engine tests
+└── tests/                   # engine + training tests (40)
 ```
 
 ---
