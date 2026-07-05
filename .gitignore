@@ -1,0 +1,21 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+.pytest_cache/
+
+# Secrets & local data
+.env
+.chroma/
+*.sqlite3
+
+# Node / Cockpit
+node_modules/
+dist/
+build/
+.next/
+
+# OS
+.DS_Store
