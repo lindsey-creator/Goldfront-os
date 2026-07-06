@@ -10,11 +10,12 @@ ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 GO="$ROOT/goldfront-os"
 CC="$ROOT/conrad-command-center"
 
-[ -d "$GO" ] && [ -d "$CC" ] || die() { echo "$*"; exit 1; }
+die() { echo "ERROR: $*" >&2; exit 1; }
+[ -d "$GO" ] && [ -d "$CC" ] || die "Missing repos under $ROOT (need goldfront-os + conrad-command-center)"
 
 RSYNC_EX=(
   --exclude '.git' --exclude 'node_modules' --exclude '.venv'
-  --exclude '__pycache__' --exclude '.env' --exclude '.pytest_cache'
+  --exclude '__pycache__' --exclude '.env' --exclude '.memory' --exclude '.pytest_cache'
 )
 
 echo "==> Rsync to $MANUS_HOST"

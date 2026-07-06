@@ -1,82 +1,129 @@
 # Deploy the Superman Brain to the Manus box
 
-One app, one port. The Brain (FastAPI) serves the Command Center UI after a build.
-Put it next to your existing `command.theconradteam.com`.
+One app, one port. FastAPI serves the Command Center UI after `npm run build`.
 
-## Prereqs on the Manus box
-- Python 3.9+ and Node.js installed
-- Both repos side by side:
-  ```
-  .../Brain/goldfront-os/
-  .../Brain/conrad-command-center/
-  ```
+**Manus box:** `34.26.142.220` (same host as `command.theconradteam.com`)  
+**Target domain:** `brain.theconradteam.com` → A record to that IP  
+**Layout on the server:**
 
-## 1. One command to build + run
+```
+~/Documents/Claude/Projects/Brain/goldfront-os/
+~/Documents/Claude/Projects/Brain/conrad-command-center/
+```
+
+Full finish checklist and three sync options: **`deploy/MANUS-FINISH.md`**.
+
+---
+
+## Fastest finish (on Manus terminal)
+
+**Option A — GitHub clone + full production setup (recommended):**
+
 ```bash
-cd goldfront-os
-bash deploy/build_and_run.sh
-```
-This builds the UI, installs deps, and serves everything at `http://0.0.0.0:8000`.
-Open it on the box at `http://localhost:8000`, or from your phone at
-`http://<manus-box-ip>:8000`.
-
-## 2. Secrets (optional, add at your pace)
-Copy `conrad-command-center/.env.example` and the Brain's env, and fill only the
-connectors you want live. Everything works with none set — empty cards show
-"connect this," never fake data. Add `ANTHROPIC_API_KEY` to make /chat talk in
-your voice.
-
-## 3. Keep it running (so it survives logout/reboot)
-Simplest — a systemd service:
-```ini
-# /etc/systemd/system/superman-brain.service
-[Unit]
-Description=Superman Brain (Goldfront OS)
-After=network.target
-
-[Service]
-WorkingDirectory=/home/<you>/Brain/goldfront-os
-Environment=GOLDFRONT_OWNER=lindsey
-ExecStart=/home/<you>/Brain/goldfront-os/.venv/bin/uvicorn brain.main:app --host 0.0.0.0 --port 8000
-Restart=always
-
-[Install]
-WantedBy=multi-user.target
-```
-```bash
-sudo systemctl enable --now superman-brain
+curl -fsSL https://raw.githubusercontent.com/lindsey-creator/Goldfront-os/master/deploy/manus_bootstrap.sh | bash
 ```
 
-## 4. Put it on a domain (like the current dashboard)
-Point a subdomain (e.g. `brain.theconradteam.com`) at the box and reverse-proxy
-:8000 with the same web server that serves your current Command Center (nginx/
-Caddy). Add HTTPS. Then it's reachable anywhere — phone, Cybertruck, Starlink.
+That clones/pulls both repos, then runs `deploy/FINISH_ON_MANUS.sh` (env merge from `/var/www/dashboard/.env`, UI build, systemd, nginx, optional certbot).
 
-## Rebuild after changes
-Re-run `bash deploy/build_and_run.sh` (or just `npm run build` in the UI, then
-restart the service).
+**Option B — repos already on the box:**
 
-## One-shot on the Manus box
-After `git pull` (or rsync) both repos:
 ```bash
 cd ~/Documents/Claude/Projects/Brain/goldfront-os
-bash deploy/manus_production.sh
+git pull --ff-only
+cd ../conrad-command-center && git pull --ff-only
+bash ~/Documents/Claude/Projects/Brain/goldfront-os/deploy/FINISH_ON_MANUS.sh
 ```
 
-Artifacts in this folder:
-- `manus_production.sh` — build, systemd, nginx
-- `nginx-brain.theconradteam.com.conf` — reverse proxy :8000 (same host as command)
-- `superman-brain.service` — reference unit (production script writes `/etc/systemd/system/...`)
+**From Lindsey's Mac (rsync + remote finish):**
 
-## DNS
-Add an **A record** `brain.theconradteam.com` → same IP as `command.theconradteam.com` (currently `34.26.142.220`).
-
-## SSH from Lindsey's Mac
-If `Permission denied (publickey)`, add this Mac's key on the Manus box:
 ```bash
-# on Mac:
+cd ~/Documents/Claude/Projects/Brain/goldfront-os
+bash deploy/FINISH_FROM_MAC.sh
+```
+
+---
+
+## Dev / smoke: build + run (no systemd)
+
+```bash
+cd ~/Documents/Claude/Projects/Brain/goldfront-os
+bash deploy/build_and_run.sh
+```
+
+Serves at `http://0.0.0.0:8000`. Requires Python 3.9+, Node.js, and npm on the box.
+
+---
+
+## Verify (on Manus)
+
+```bash
+curl -sf http://127.0.0.1:8000/health
+curl -sf http://127.0.0.1:8000/connectors/status | python3 -m json.tool | head -40
+curl -sf -o /dev/null -w '%{http_code}\n' http://127.0.0.1:8000/
+```
+
+After DNS + TLS:
+
+```bash
+curl -sf https://brain.theconradteam.com/health
+```
+
+---
+
+## Secrets (optional)
+
+`FINISH_ON_MANUS.sh` runs `deploy/reuse_manus_env.sh` to copy connector keys from `/var/www/dashboard/.env` into `goldfront-os/.env`. Add `ANTHROPIC_API_KEY` for live `/chat`. Empty connectors show “connect this” in the UI — no fake data.
+
+---
+
+## systemd (reference)
+
+Production install is handled by `FINISH_ON_MANUS.sh` / `manus_production.sh`. Reference unit: `deploy/superman-brain.service`.
+
+```bash
+sudo systemctl status superman-brain
+journalctl -u superman-brain -n 40 --no-pager
+```
+
+---
+
+## Artifacts in `deploy/`
+
+| File | Purpose |
+|------|---------|
+| `MANUS-FINISH.md` | Status checklist + Options A/B/C |
+| `manus_bootstrap.sh` | One-curl GitHub clone + finish |
+| `FINISH_ON_MANUS.sh` | Full production deploy on Ubuntu |
+| `FINISH_FROM_MAC.sh` | rsync from Mac + remote finish |
+| `build_and_run.sh` | Local build + uvicorn only |
+| `manus_production.sh` | Build + systemd + nginx (no clone) |
+| `reuse_manus_env.sh` | Merge dashboard `.env` → brain |
+| `nginx-brain.*.conf` | Reverse proxy :8000 |
+
+---
+
+## Rebuild after code changes
+
+```bash
+cd ~/Documents/Claude/Projects/Brain/goldfront-os
+bash deploy/FINISH_ON_MANUS.sh
+# or quick: bash deploy/build_and_run.sh
+```
+
+---
+
+## SSH from Mac
+
+If `Permission denied (publickey)`:
+
+```bash
+# Mac:
 cat ~/.ssh/id_ed25519.pub
-# on Manus (~/.ssh/authorized_keys):
-# paste the line, then from Mac:
+# Manus: paste into ~/.ssh/authorized_keys
 ssh lindseyconrad@34.26.142.220
 ```
+
+## GitHub repos
+
+- https://github.com/lindsey-creator/Goldfront-os.git (`master`)
+- https://github.com/lindsey-creator/conrad-command-center.git (`main`)

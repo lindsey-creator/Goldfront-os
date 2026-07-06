@@ -8,6 +8,10 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 BRAIN_DIR="$(cd "$HERE/.." && pwd)"
 UI_DIR="$(cd "$BRAIN_DIR/.." && pwd)/conrad-command-center"
 
+for cmd in python3 node npm; do
+  command -v "$cmd" >/dev/null || { echo "Install $cmd first (required for build_and_run.sh)"; exit 1; }
+done
+
 echo "==> Brain:  $BRAIN_DIR"
 echo "==> UI:     $UI_DIR"
 
