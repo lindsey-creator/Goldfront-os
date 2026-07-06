@@ -17,6 +17,8 @@ voice and threaded exchanges -> conversation_patterns.
 STUB: build in Cowork. The divergence check below shows the intended shape.
 """
 
+from __future__ import annotations
+
 from brain.engine.deal_math import DealInputs, evaluate_deal
 
 TEAM_CATEGORIES = (

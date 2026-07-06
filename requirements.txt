@@ -5,3 +5,4 @@ chromadb
 pytest
 httpx
 python-dotenv
+eval_type_backport

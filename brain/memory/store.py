@@ -163,20 +163,30 @@ class ChromaVectorStore(BaseVectorStore):
 # ---------------------------------------------------------------------------
 # Backend selection
 # ---------------------------------------------------------------------------
-def get_store(path: str | None = None) -> BaseVectorStore:
+def get_store(path: str | None = None, workspace: str | None = None) -> BaseVectorStore:
     """
-    Return the best available backend.
+    Return the best available backend, namespaced by `workspace`.
+
+    Each workspace (owner id, e.g. "lindsey", "ryan-arth", or "goldfront-shared")
+    gets its OWN physical directory, so brains never see each other's data. Two
+    stores under the same base with different workspaces are fully isolated.
 
     Force the fallback with GOLDFRONT_MEMORY_BACKEND=json (used by tests).
     """
+    ws = workspace or ""
+
+    def _p(default: str) -> str:
+        base = path or default
+        return os.path.join(base, ws) if ws else base
+
     backend = os.getenv("GOLDFRONT_MEMORY_BACKEND", "auto").lower()
     if backend == "json":
-        return JsonVectorStore(path or "./.memory")
+        return JsonVectorStore(_p("./.memory"))
     if backend in ("chroma", "auto"):
         try:
-            return ChromaVectorStore(path or "./.chroma")
+            return ChromaVectorStore(_p("./.chroma"))
         except Exception:
             if backend == "chroma":
                 raise
-            return JsonVectorStore(path or "./.memory")
-    return JsonVectorStore(path or "./.memory")
+            return JsonVectorStore(_p("./.memory"))
+    return JsonVectorStore(_p("./.memory"))

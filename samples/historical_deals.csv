@@ -1,0 +1,5 @@
+address,purchase_price,arv,rehab_estimate,monthly_rent,monthly_debt_service,verdict,reasoning
+"111 Oak, Cleveland",80000,200000,30000,2000,1200,GO,"clean margin + coverage, Baker likes comps"
+"222 Elm, Akron",180000,200000,30000,800,1000,NO-GO,"margin too thin, coverage under 1"
+"333 Pine, Canton",95000,210000,35000,1900,1300,GO,"strong flywheel, four touches live"
+"444 Birch, Cleveland",160000,200000,25000,900,1100,GO,"override — strategic partner, took thin margin on purpose"

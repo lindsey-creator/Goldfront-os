@@ -22,18 +22,26 @@ Full definition lives in [`docs/master-spec.md`](docs/master-spec.md). Read that
 
 ## What works today
 
-Real and tested: the deterministic engine, **and the full training loop** —
-memory, auto-classification, deal-decision training with divergence flagging,
-team-interaction and conversation training, decision history, and importers for
-bulk messages, Apollo, ClickUp, and Fieldy (spec §5.5). Runs with no API key and
-no ChromaDB (JSON memory fallback). Still stubbed: persona + reasoning agent.
+Real and tested: the deterministic engine, the **full training loop** (memory,
+auto-classification, deal-decision training with divergence flagging, team +
+conversation training, decision history, importers for bulk/Apollo/ClickUp/Fieldy),
+**shadow-mode validation** (does the Brain match your real calls yet?), and the
+**Cockpit read endpoints**, and the **persona + reasoning agent** (`/chat`) that
+answers in Lindsey's voice (Claude when `ANTHROPIC_API_KEY` is set, honest fallback
+otherwise — always narrates engine numbers, never computes them). Runs with no API
+key and no ChromaDB (JSON memory fallback).
 
 ```bash
 python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 
-pytest                                   # 40 tests should pass
+pytest                                   # 50 tests should pass
 uvicorn brain.main:app --reload          # /docs for every endpoint
+```
+
+Validate before you trust it (spec §10 step 3):
+```bash
+python -m brain.validation.shadow samples/historical_deals.csv
 ```
 
 Feeding the Brain your history: see **`docs/training-and-import.md`** (includes

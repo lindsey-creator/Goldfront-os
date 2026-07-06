@@ -1,0 +1,16 @@
+[Unit]
+Description=Superman Brain (Goldfront OS)
+After=network.target
+
+[Service]
+Type=simple
+User=%i
+WorkingDirectory=%h/Documents/Claude/Projects/Brain/goldfront-os
+Environment=GOLDFRONT_OWNER=lindsey
+EnvironmentFile=-%h/Documents/Claude/Projects/Brain/goldfront-os/.env
+ExecStart=%h/Documents/Claude/Projects/Brain/goldfront-os/.venv/bin/uvicorn brain.main:app --host 0.0.0.0 --port 8000
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target

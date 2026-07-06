@@ -80,7 +80,34 @@ def test_clickup_ingest_routes_to_knowledge(svc):
     s = clickup_ingest.ingest_records(records, svc=svc)
     assert s["ingested"] == 2
     assert s["skipped"] == 1
-    assert svc.kb.count("knowledge") == 2
+    assert svc.kb.count("knowledge") == 1
+    assert svc.kb.count("decisions") == 1
+
+
+def test_clickup_ingest_dedup(svc):
+    records = [
+        {"id": "t1", "type": "doc", "title": "Deal Rules", "text": "Margin floor 25%"},
+    ]
+    first = clickup_ingest.ingest_records(records, svc=svc)
+    second = clickup_ingest.ingest_records(records, svc=svc)
+    assert first["ingested"] == 1
+    assert second["ingested"] == 0
+    assert second["duplicated"] == 1
+
+
+def test_clickup_ingest_routes_decisions(svc):
+    records = [
+        {
+            "id": "d1",
+            "type": "task",
+            "title": "456 Oak Cleveland",
+            "text": "VERDICT: CONDITIONAL\nThin on margin but Baker wants it.",
+            "list_name": "Pipeline Decisions",
+        },
+    ]
+    s = clickup_ingest.ingest_records(records, svc=svc)
+    assert s["by_collection"]["decisions"] == 1
+    assert svc.kb.count("decisions") == 1
 
 
 def test_clickup_fetch_and_ingest_with_injected_fetcher(svc):

@@ -1,0 +1,15 @@
+# Optional: run without host Python/Node. Build UI first (npm run build in conrad-command-center).
+# From this directory: docker compose up -d --build
+services:
+  brain:
+    build:
+      context: ../../..
+      dockerfile: goldfront-os/deploy/manus/Dockerfile
+    ports:
+      - "8000:8000"
+    environment:
+      GOLDFRONT_OWNER: ${GOLDFRONT_OWNER:-lindsey}
+    env_file:
+      - path: ../../../goldfront-os/.env
+        required: false
+    restart: unless-stopped

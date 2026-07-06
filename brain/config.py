@@ -34,3 +34,14 @@ FLYWHEEL_TOUCHES = (
 
 # --- Memory ----------------------------------------------------------------
 DECISION_HALFLIFE_DAYS = 180  # recent decisions outweigh old ones (tunable)
+
+# --- Workspaces: one codebase, separate private brains --------------------
+# Each person gets an ISOLATED brain — their own memory, never bleeding into
+# anyone else's. Lindsey's voice/decisions/health stay private to "lindsey".
+# Partners get their own. What the partnership deliberately shares (Goldfront
+# deal rules, pipeline) lives in the SHARED workspace everyone opts into.
+import os  # noqa: E402
+
+OWNER = os.getenv("GOLDFRONT_OWNER", "lindsey")   # whose brain this instance is
+SHARED_WORKSPACE = "goldfront-shared"             # partnership-common knowledge
+KNOWN_OWNERS = ("lindsey", "ryan-arth", "ryan-baker")  # partners; extend as needed

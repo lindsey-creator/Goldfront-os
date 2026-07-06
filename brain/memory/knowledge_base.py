@@ -15,15 +15,32 @@ from __future__ import annotations
 
 import time
 
-from brain.config import DECISION_HALFLIFE_DAYS
+from brain.config import DECISION_HALFLIFE_DAYS, OWNER, SHARED_WORKSPACE
 from brain.memory.store import BaseVectorStore, get_store
 
 COLLECTIONS = ("knowledge", "voice", "decisions", "conversation_patterns")
 
 
 class KnowledgeBase:
-    def __init__(self, store: BaseVectorStore | None = None, path: str | None = None):
-        self.store = store or get_store(path)
+    """
+    One person's private brain. `workspace` isolates it from every other brain —
+    defaults to config.OWNER (whose instance this is). Use `KnowledgeBase.shared()`
+    for the partnership-common Goldfront knowledge everyone opts into.
+    """
+
+    def __init__(
+        self,
+        store: BaseVectorStore | None = None,
+        path: str | None = None,
+        workspace: str | None = None,
+    ):
+        self.workspace = workspace or OWNER
+        self.store = store or get_store(path, workspace=self.workspace)
+
+    @classmethod
+    def shared(cls, path: str | None = None) -> "KnowledgeBase":
+        """The Goldfront shared brain — partnership-common rules/pipeline."""
+        return cls(path=path, workspace=SHARED_WORKSPACE)
 
     # -- generic ------------------------------------------------------------
     def add(self, collection: str, text: str, metadata: dict | None = None) -> str:
