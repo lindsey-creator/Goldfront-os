@@ -3,7 +3,7 @@
 # Prereq: your Mac SSH public key in ~/.ssh/authorized_keys on the Manus box.
 set -euo pipefail
 
-MANUS_HOST="${MANUS_HOST:-lindseyconrad@34.26.142.220}"
+MANUS_HOST="${MANUS_HOST:-lindseyconrad@102.210.17.121}"
 REMOTE_BASE="${REMOTE_BASE:-Documents/Claude/Projects/Brain}"
 
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"

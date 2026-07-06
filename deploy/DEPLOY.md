@@ -2,7 +2,7 @@
 
 One app, one port. FastAPI serves the Command Center UI after `npm run build`.
 
-**Manus box:** `34.26.142.220` (same host as `command.theconradteam.com`)  
+**Manus box:** `102.210.17.121` (same host as `command.theconradteam.com`)  
 **Target domain:** `brain.theconradteam.com` → A record to that IP  
 **Layout on the server:**
 
@@ -120,7 +120,7 @@ If `Permission denied (publickey)`:
 # Mac:
 cat ~/.ssh/id_ed25519.pub
 # Manus: paste into ~/.ssh/authorized_keys
-ssh lindseyconrad@34.26.142.220
+ssh lindseyconrad@102.210.17.121
 ```
 
 ## GitHub repos

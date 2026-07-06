@@ -1,7 +1,7 @@
 # Manus finish — Conrad Command Center + Superman Brain
 
 **Last audited:** 2026-07-06 (Mac local)  
-**Manus IP:** `34.26.142.220`  
+**Manus IP:** `102.210.17.121`  
 **Public domain (target):** `https://brain.theconradteam.com`  
 **Legacy dashboard (unchanged):** `https://command.theconradteam.com`
 
@@ -74,7 +74,7 @@ bash "$BRAIN_PARENT/goldfront-os/deploy/FINISH_ON_MANUS.sh"
 
 ## Option B — scp/rsync from Mac
 
-**Requires:** SSH key on Manus (`lindseyconrad@34.26.142.220`).
+**Requires:** SSH key on Manus (`lindseyconrad@102.210.17.121`).
 
 On **Mac**:
 
@@ -86,7 +86,7 @@ bash deploy/FINISH_FROM_MAC.sh
 Or rsync only (then SSH and run finish):
 
 ```bash
-MANUS=lindseyconrad@34.26.142.220
+MANUS=lindseyconrad@102.210.17.121
 BASE=Documents/Claude/Projects/Brain
 EX=(--exclude .git --exclude node_modules --exclude .venv --exclude .env --exclude .memory --exclude __pycache__)
 
@@ -109,7 +109,7 @@ ssh "$MANUS" "bash ~/$BASE/goldfront-os/deploy/FINISH_ON_MANUS.sh"
 Upload to Manus (pick one):
 
 ```bash
-scp ~/Documents/Claude/Projects/Brain/brain-deploy.zip lindseyconrad@34.26.142.220:~/
+scp ~/Documents/Claude/Projects/Brain/brain-deploy.zip lindseyconrad@102.210.17.121:~/
 ```
 
 **On Manus:**
@@ -150,7 +150,7 @@ curl -sf -o /dev/null -w 'https health %{http_code}\n' https://brain.theconradte
 curl -sf https://brain.theconradteam.com/health || echo "DNS/TLS not ready yet"
 ```
 
-**DNS:** A record `brain.theconradteam.com` → `34.26.142.220` (same as `command.theconradteam.com`).
+**DNS:** A record `brain.theconradteam.com` → `102.210.17.121` (same as `command.theconradteam.com`).
 
 ---
 
@@ -178,7 +178,7 @@ bash deploy/build_and_run.sh
 ## Finish in 3 steps (simplest path)
 
 1. **Manus terminal:** `curl -fsSL https://raw.githubusercontent.com/lindsey-creator/Goldfront-os/master/deploy/manus_bootstrap.sh | bash`
-2. **DNS panel:** A record `brain` → `34.26.142.220` (if not already).
+2. **DNS panel:** A record `brain` → `102.210.17.121` (if not already).
 3. **Verify:** `curl -sf http://127.0.0.1:8000/health` on Manus, then `https://brain.theconradteam.com/health` from anywhere.
 
 Old dashboard stays at `https://command.theconradteam.com`.

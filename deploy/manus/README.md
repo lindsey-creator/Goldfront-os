@@ -5,7 +5,7 @@ Conrad Command Center (React) + Goldfront OS Brain (FastAPI) on **one port**: `h
 ## SSH search result (this Mac)
 
 - `~/.ssh/config` has **no** `Host manus` entry (only `github.com`).
-- `command.theconradteam.com` → `34.26.142.220` (likely your public dashboard host).
+- `command.theconradteam.com` → `102.210.17.121` (likely your public dashboard host).
 - SSH to that IP from this machine: **Permission denied (publickey)** — add a `Host manus` block and key before using `deploy-from-dev-mac.sh`.
 
 ## Manual setup on the Manus machine (run these ON Manus)

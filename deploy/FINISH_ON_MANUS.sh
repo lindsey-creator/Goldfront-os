@@ -155,9 +155,9 @@ fi
 echo ""
 echo "==> [6/6] DNS + HTTPS"
 PUBLIC_IP="$(curl -sf ifconfig.me 2>/dev/null || curl -sf icanhazip.com 2>/dev/null || true)"
-echo "    Ensure DNS A record: $DOMAIN → ${PUBLIC_IP:-34.26.142.220}"
+echo "    Ensure DNS A record: $DOMAIN → ${PUBLIC_IP:-102.210.17.121}"
 if command -v certbot >/dev/null && [ -f "/etc/nginx/sites-enabled/$DOMAIN" ]; then
-  if ! host "$DOMAIN" 2>/dev/null | grep -q "${PUBLIC_IP:-34.26.142.220}"; then
+  if ! host "$DOMAIN" 2>/dev/null | grep -q "${PUBLIC_IP:-102.210.17.121}"; then
     echo "    (skip certbot until DNS propagates)"
   else
     sudo certbot --nginx -d "$DOMAIN" --non-interactive --agree-tos --redirect \
