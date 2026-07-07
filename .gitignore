@@ -11,6 +11,7 @@ venv/
 .chroma/
 .memory/
 *.sqlite3
+deploy/PASTE_THESE_KEYS.md
 
 # Node / Cockpit
 node_modules/
