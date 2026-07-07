@@ -60,7 +60,10 @@ PRIORITY=(
   "/var/www/dashboard/.env.local"
   "$HOME/Documents/Claude/Projects/Brain/goldfront-os/.env"
 )
-mapfile -t CANDIDATES < <(
+CANDIDATES=()
+while IFS= read -r _line; do
+  CANDIDATES+=("$_line")
+done < <(
   printf '%s\n' "${PRIORITY[@]}"
   find "$HOME" /var/www /opt /srv /etc 2>/dev/null \
     \( -path '*/node_modules/*' -o -path '*/.venv/*' -o -path '*/.git/*' \) -prune \

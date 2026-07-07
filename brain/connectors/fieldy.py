@@ -17,13 +17,72 @@ def configured() -> bool:
     return is_configured(*ENV_VARS)
 
 
-def _base_url() -> str:
-    return os.getenv("FIELDY_API_BASE", "https://api.fieldy.ai").rstrip("/")
+def _api_root() -> str:
+    base = os.getenv("FIELDY_API_BASE", "https://api.fieldy.ai").rstrip("/")
+    if base.endswith("/api/public/v2"):
+        return base
+    return f"{base}/api/public/v2"
 
 
 def _headers() -> dict[str, str]:
     token = env_required("FIELDY_API_TOKEN", CONNECTOR)
     return {"Authorization": f"Bearer {token}"}
+
+
+def _range_params(start: date, end: date) -> dict[str, str]:
+    return {
+        "startTime": f"{start.isoformat()}T00:00:00Z",
+        "endTime": f"{end.isoformat()}T23:59:59Z",
+    }
+
+
+def _get_paginated(path: str, params: dict[str, str]) -> list[dict]:
+    items: list[dict] = []
+    cursor: str | None = None
+    while True:
+        query = dict(params)
+        if cursor:
+            query["cursor"] = cursor
+        resp = httpx.get(
+            f"{_api_root()}{path}",
+            headers=_headers(),
+            params=query,
+            timeout=60.0,
+        )
+        resp.raise_for_status()
+        payload = resp.json()
+        items.extend(payload.get("items", []))
+        cursor = payload.get("nextCursor")
+        if not cursor:
+            break
+    return items
+
+
+def _transcript_for_conversation(conv: dict) -> str:
+    content = (conv.get("content") or "").strip()
+    if content:
+        return content
+
+    start = conv.get("startTime")
+    end = conv.get("endTime")
+    if not start or not end:
+        return (conv.get("summary") or "").strip()
+
+    segments = _get_paginated(
+        "/transcriptions",
+        {"startTime": start, "endTime": end},
+    )
+    if not segments:
+        return (conv.get("summary") or "").strip()
+
+    lines: list[str] = []
+    for seg in segments:
+        text = (seg.get("text") or "").strip()
+        if not text:
+            continue
+        speaker = (seg.get("speaker") or "").strip()
+        lines.append(f"{speaker}: {text}" if speaker else text)
+    return "\n".join(lines)
 
 
 def fetch_conversations(
@@ -40,24 +99,17 @@ def fetch_conversations(
     start = start or (end - timedelta(days=1))
     speaker_me = os.getenv("FIELDY_SPEAKER_ME", "Lindsey")
 
-    resp = httpx.get(
-        f"{_base_url()}/v1/conversations",
-        headers=_headers(),
-        params={"from": start.isoformat(), "to": end.isoformat()},
-        timeout=60.0,
-    )
-    resp.raise_for_status()
-    payload = resp.json()
-    raw = payload if isinstance(payload, list) else payload.get("conversations", [])
+    raw = _get_paginated("/conversations", _range_params(start, end))
 
     convos: list[dict] = []
     for c in raw:
+        start_time = c.get("startTime") or ""
         convos.append(
             {
                 "id": c.get("id"),
                 "title": c.get("title") or c.get("name", ""),
-                "date": c.get("date") or c.get("created_at", "")[:10],
-                "transcript": c.get("transcript") or c.get("text") or "",
+                "date": start_time[:10] if start_time else "",
+                "transcript": _transcript_for_conversation(c),
                 "my_utterances": c.get("my_utterances"),
                 "speaker_me": c.get("speaker_me") or speaker_me,
             }

@@ -124,26 +124,75 @@ def test_clickup_fetch_tasks_and_overdue(monkeypatch):
         mock_get.assert_called()
 
 
+def test_clickup_transcript_task_record(monkeypatch):
+    monkeypatch.setenv("CLICKUP_API_TOKEN", "pk_test")
+    monkeypatch.setenv("CLICKUP_WORKSPACE_ID", "90141259054")
+
+    transcript_task = {
+        "id": "tx1",
+        "name": "07-02 Consultation: Onboarding",
+        "description": "",
+        "url": "https://app.clickup.com/t/tx1",
+        "date_created": "1783364023396",
+        "list": {"name": "📥 Inbox — Raw Transcripts"},
+        "folder": {"name": "Plaud Meeting Notes"},
+        "space": {"name": "Team Space"},
+        "tags": [],
+        "custom_fields": [
+            {
+                "name": "Summary",
+                "value": "- Onboarding planned.\n- Includes appraisal panel integration.",
+            }
+        ],
+        "attachments": [],
+    }
+    mock_resp = MagicMock()
+    mock_resp.raise_for_status = MagicMock()
+    mock_resp.json.return_value = {"tasks": [transcript_task]}
+    empty_resp = MagicMock()
+    empty_resp.raise_for_status = MagicMock()
+    empty_resp.json.return_value = {"tasks": []}
+
+    with patch("httpx.get") as mock_get:
+        mock_get.side_effect = lambda url, **kwargs: (
+            empty_resp
+            if kwargs.get("params", {}).get("page", 0) > 0
+            else mock_resp
+            if "/team/" in url and "/task" in url
+            else empty_resp
+        )
+        records = clickup.fetch_records()
+        assert len(records) == 1
+        assert records[0]["record_kind"] == "voice_transcript"
+        assert records[0]["collection"] == "conversation_patterns"
+        assert "Onboarding planned" in records[0]["text"]
+        convos = clickup.fetch_recent_transcripts(days_back=30)
+        assert len(convos) == 1
+        assert convos[0]["source"] == "clickup"
+
+
 def test_fieldy_fetch_conversations(monkeypatch):
     monkeypatch.setenv("FIELDY_API_TOKEN", "fy_test")
 
-    mock_resp = MagicMock()
-    mock_resp.raise_for_status = MagicMock()
-    mock_resp.json.return_value = {
-        "conversations": [
+    conv_resp = MagicMock()
+    conv_resp.raise_for_status = MagicMock()
+    conv_resp.json.return_value = {
+        "items": [
             {
                 "id": "c1",
                 "title": "Call with Bobby",
-                "date": "2026-07-04",
-                "transcript": "Lindsey: Let's close.\nBobby: Sounds good.",
+                "startTime": "2026-07-04T10:00:00Z",
+                "endTime": "2026-07-04T10:30:00Z",
+                "content": "Lindsey: Let's close.\nBobby: Sounds good.",
             }
         ]
     }
 
-    with patch("httpx.get", return_value=mock_resp):
+    with patch("httpx.get", return_value=conv_resp):
         convos = fieldy.fetch_conversations()
         assert len(convos) == 1
         assert convos[0]["speaker_me"] == "Lindsey"
+        assert "Let's close" in convos[0]["transcript"]
 
 
 def test_ghl_fetch_summary(monkeypatch):

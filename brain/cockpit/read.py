@@ -7,7 +7,7 @@ present, live data fills the module; otherwise `connect_source` — never fake d
 
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, timedelta
 
 from brain.connectors import apple_health, clickup, fieldy, gcal, ghl, gmail, whoop
 from brain.connectors.base import ConnectorNotConfigured, section_needs, section_ok
@@ -55,6 +55,34 @@ class CockpitRead:
             return fieldy.fetch_yesterday()
         except (ConnectorNotConfigured, Exception):
             return None
+
+    def _clickup_transcripts(self, days_back: int = 2) -> list[dict] | None:
+        if not clickup.configured():
+            return None
+        try:
+            return clickup.fetch_recent_transcripts(days_back=days_back)
+        except (ConnectorNotConfigured, Exception):
+            return None
+
+    def _voice_convos(self, days_back: int = 14) -> tuple[list[dict], str | None]:
+        """Fieldy when it has data; otherwise ClickUp transcripts (Plaud/Fieldy archive)."""
+        if fieldy.configured():
+            try:
+                fieldy_convos = fieldy.fetch_yesterday()
+                if fieldy_convos:
+                    return fieldy_convos, "fieldy"
+            except (ConnectorNotConfigured, Exception):
+                pass
+        if clickup.configured():
+            try:
+                return clickup.fetch_recent_transcripts(days_back=days_back), "clickup"
+            except (ConnectorNotConfigured, Exception):
+                pass
+        if fieldy.configured():
+            return [], "fieldy"
+        if clickup.configured():
+            return [], "clickup"
+        return [], None
 
     def _calendar_today(self) -> list[dict] | None:
         if not gcal.configured():
@@ -129,17 +157,23 @@ class CockpitRead:
                     }
                 )
 
-        fieldy_convos = self._fieldy_yesterday()
-        if fieldy_convos is not None:
-            sources.append("fieldy")
-            commitment_items = fieldy.commitments_from_convos(fieldy_convos)
+        fieldy_convos, voice_source = self._voice_convos()
+        if voice_source:
+            sources.append(voice_source)
+            if voice_source == "fieldy":
+                commitment_items = fieldy.commitments_from_convos(fieldy_convos)
+            else:
+                flagged = clickup.fetch_fieldy_flagged_tasks()
+                commitment_items = flagged or clickup.commitments_from_transcripts(
+                    fieldy_convos
+                )
             for c in fieldy_convos[:5]:
                 today_items.append(
                     {
-                        "title": c.get("title") or "Fieldy conversation",
+                        "title": c.get("title") or "Meeting transcript",
                         "detail": (c.get("transcript") or "")[:200],
                         "date": c.get("date"),
-                        "source": "fieldy",
+                        "source": voice_source,
                     }
                 )
 
@@ -183,8 +217,8 @@ class CockpitRead:
         today_sources: list[str] = []
         if cal_today is not None:
             today_sources.append("google_calendar")
-        if fieldy_convos is not None:
-            today_sources.append("fieldy")
+        if voice_source:
+            today_sources.append(voice_source)
 
         today_sec = (
             {"status": "ok", "sources": today_sources, "items": today_items}
@@ -207,9 +241,11 @@ class CockpitRead:
             else _needs("clickup")
         )
         commitments_sec = (
-            section_ok(commitment_items, "fieldy")
+            section_ok(commitment_items, voice_source or "fieldy")
             if commitment_items
-            else _needs("fieldy")
+            else _needs(
+                voice_source or ("clickup" if clickup.configured() else "fieldy")
+            )
         )
         money_sec = (
             {
@@ -221,20 +257,27 @@ class CockpitRead:
             else _needs("ghl")
         )
 
+        yesterday_iso = (date.today() - timedelta(days=1)).isoformat()
+        yesterday_convos = [
+            c for c in fieldy_convos if c.get("date") == yesterday_iso
+        ] or fieldy_convos[:5]
         legacy_yesterday = (
             section_ok(
                 [
                     {
                         "title": c.get("title", "Conversation"),
                         "detail": (c.get("transcript") or "")[:300],
-                        "source": "fieldy",
+                        "date": c.get("date"),
+                        "source": voice_source or "fieldy",
                     }
-                    for c in (fieldy_convos or [])
+                    for c in yesterday_convos
                 ],
-                "fieldy",
+                voice_source or "fieldy",
             )
-            if fieldy_convos
-            else _needs("fieldy")
+            if yesterday_convos and voice_source
+            else _needs(
+                voice_source or ("clickup" if clickup.configured() else "fieldy")
+            )
         )
         legacy_schedule = (
             section_ok(cal_today or [], "google_calendar")
@@ -370,6 +413,19 @@ class CockpitRead:
                     )
             except Exception:
                 pass
+        elif clickup.configured():
+            try:
+                cu = clickup.fetch_recent_transcripts(days_back=2, limit=5)
+                if not cu:
+                    items.append(
+                        {
+                            "title": "No meeting transcripts in ClickUp from the last 2 days",
+                            "source": "clickup",
+                        }
+                    )
+                sources.append("clickup")
+            except Exception:
+                pass
 
         if not sources:
             return _needs("brain_scan")
@@ -479,6 +535,20 @@ class CockpitRead:
                             "committed": item["title"],
                             "actual": "from Fieldy yesterday",
                             "suggested_move": "Confirm in ClickUp",
+                        }
+                    )
+            except Exception:
+                pass
+        elif clickup.configured():
+            sources.append("clickup")
+            try:
+                for item in clickup.fetch_fieldy_flagged_tasks(limit=5):
+                    gaps.append(
+                        {
+                            "person": "Lindsey",
+                            "committed": item.get("detail") or item.get("title", ""),
+                            "actual": "flagged from Fieldy in ClickUp",
+                            "suggested_move": "Close the loop",
                         }
                     )
             except Exception:

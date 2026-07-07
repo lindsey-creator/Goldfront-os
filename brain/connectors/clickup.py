@@ -2,19 +2,38 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+import re
+from datetime import date, datetime, timedelta, timezone
 from typing import Any
 
 import httpx
 
 from brain.connectors.base import ConnectorNotConfigured, env_required, is_configured
-from brain.connectors.clickup_routing import decision_metadata, route_collection
+from brain.connectors.clickup_routing import (
+    decision_metadata,
+    route_collection,
+    voice_transcript_metadata,
+)
 
 API_BASE = "https://api.clickup.com/api/v2"
 CONNECTOR = "clickup"
 ENV_VARS = ["CLICKUP_API_TOKEN", "CLICKUP_WORKSPACE_ID"]
 MAX_TASK_PAGES = 20
 MAX_COMMENT_TASKS = 150
+TRANSCRIPT_CF_NAMES = ("summary", "transcript", "meeting notes", "brief", "recording notes")
+TRANSCRIPT_PATH_HINTS = (
+    "raw transcript",
+    "meeting notes",
+    "plaud",
+    "fieldy",
+    "voice memo",
+    "processed brief",
+)
+TRANSCRIPT_NAME_RE = re.compile(
+    r"^\d{2}-\d{2}\s|🎙️|plaud|fieldy|consultation:|recording|voice memo",
+    re.I,
+)
+AUDIO_EXT_RE = re.compile(r"\.(mp3|m4a|wav|ogg|webm|aac|mpeg)(\?|$)", re.I)
 
 
 def configured() -> bool:
@@ -50,9 +69,79 @@ def _task_context(task: dict) -> dict[str, str]:
     }
 
 
+def _custom_field_text(task: dict) -> str:
+    parts: list[str] = []
+    for cf in task.get("custom_fields") or []:
+        name = (cf.get("name") or "").lower()
+        if not any(h in name for h in TRANSCRIPT_CF_NAMES):
+            continue
+        val = cf.get("value")
+        if isinstance(val, str) and val.strip():
+            parts.append(val.strip())
+    return "\n\n".join(parts)
+
+
+def _audio_attachment(task: dict) -> dict | None:
+    for att in task.get("attachments") or []:
+        ext = (att.get("extension") or att.get("mimetype") or att.get("title") or "").lower()
+        if AUDIO_EXT_RE.search(ext) or any(
+            x in ext for x in ("mp3", "m4a", "wav", "audio", "ogg", "webm", "aac")
+        ):
+            return att
+    return None
+
+
+def _task_body_text(task: dict) -> str:
+    desc = (task.get("description") or "").strip()
+    cf_text = _custom_field_text(task)
+    if desc and cf_text and desc not in cf_text and cf_text not in desc:
+        return f"{desc}\n\n{cf_text}"
+    return desc or cf_text
+
+
+def _is_transcript_task(task: dict) -> bool:
+    ctx = _task_context(task)
+    blob = " ".join(
+        [
+            task.get("name") or "",
+            ctx["list_name"],
+            ctx["folder_name"],
+            ctx["space_name"],
+            " ".join(ctx["tags"]),
+        ]
+    ).lower()
+    if any(h in blob for h in TRANSCRIPT_PATH_HINTS):
+        return True
+    if TRANSCRIPT_NAME_RE.search(task.get("name") or ""):
+        return True
+    if "flagged from fieldy" in (task.get("description") or "").lower():
+        return False
+    return bool(_audio_attachment(task))
+
+
+def _parse_task_date(task: dict) -> str:
+    name = task.get("name") or ""
+    m = re.search(r"\b(\d{2})-(\d{2})(?:\b|:)", name)
+    if m:
+        year = date.today().year
+        created = task.get("date_created")
+        if created:
+            year = datetime.fromtimestamp(int(created) / 1000, tz=timezone.utc).year
+        return f"{year}-{m.group(1)}-{m.group(2)}"
+    m = re.search(r"\b(\d{1,2})/(\d{1,2})/(\d{4})\b", name)
+    if m:
+        return f"{m.group(3)}-{int(m.group(1)):02d}-{int(m.group(2)):02d}"
+    created = task.get("date_created")
+    if created:
+        return datetime.fromtimestamp(int(created) / 1000, tz=timezone.utc).strftime(
+            "%Y-%m-%d"
+        )
+    return ""
+
+
 def _task_to_record(task: dict, *, text: str | None = None) -> dict:
     ctx = _task_context(task)
-    body = (text or task.get("description") or "").strip() or task.get("name", "")
+    body = (text or _task_body_text(task) or "").strip() or task.get("name", "")
     record = {
         "id": str(task.get("id", "")),
         "type": "task",
@@ -61,7 +150,15 @@ def _task_to_record(task: dict, *, text: str | None = None) -> dict:
         "url": task.get("url"),
         **ctx,
     }
-    record["collection"] = route_collection(record)
+    if _is_transcript_task(task):
+        record["record_kind"] = "voice_transcript"
+        record["record_date"] = _parse_task_date(task)
+        att = _audio_attachment(task)
+        if att:
+            record["audio_attachment"] = att
+        record["collection"] = "conversation_patterns"
+    else:
+        record["collection"] = route_collection(record)
     return record
 
 
@@ -178,6 +275,101 @@ def fetch_records() -> list[dict]:
     return records
 
 
+def _transcript_convos_from_tasks(
+    tasks: list[dict],
+    *,
+    days_back: int = 2,
+    limit: int = 20,
+) -> list[dict]:
+    """Shape ClickUp transcript tasks like Fieldy conversations for the cockpit."""
+    cutoff = date.today() - timedelta(days=days_back)
+    convos: list[dict] = []
+    for task in tasks:
+        if not _is_transcript_task(task):
+            continue
+        text = _task_body_text(task).strip()
+        if len(text) < 40:
+            continue
+        record_date = _parse_task_date(task)
+        try:
+            parsed = date.fromisoformat(record_date) if record_date else None
+        except ValueError:
+            parsed = None
+        if parsed and parsed < cutoff:
+            continue
+        convos.append(
+            {
+                "id": str(task.get("id", "")),
+                "title": task.get("name") or "Meeting transcript",
+                "date": record_date,
+                "transcript": text,
+                "source": "clickup",
+                "url": task.get("url"),
+                "list_name": (task.get("list") or {}).get("name"),
+            }
+        )
+    convos.sort(key=lambda c: c.get("date") or "", reverse=True)
+    return convos[:limit]
+
+
+def fetch_recent_transcripts(days_back: int = 2, limit: int = 20) -> list[dict]:
+    """Recent meeting/audio transcripts synced into ClickUp (Plaud, Fieldy archive)."""
+    if not configured():
+        raise ConnectorNotConfigured(CONNECTOR, ENV_VARS)
+    return _transcript_convos_from_tasks(
+        fetch_tasks(include_closed=True),
+        days_back=days_back,
+        limit=limit,
+    )
+
+
+def fetch_fieldy_flagged_tasks(limit: int = 10) -> list[dict]:
+    """Action items auto-created from Fieldy conversations — live in ClickUp."""
+    if not configured():
+        raise ConnectorNotConfigured(CONNECTOR, ENV_VARS)
+    items: list[dict] = []
+    for task in fetch_tasks(include_closed=False):
+        desc = (task.get("description") or "").lower()
+        if "flagged from fieldy" not in desc:
+            continue
+        items.append(
+            {
+                "title": (task.get("description") or task.get("name", ""))[:120],
+                "detail": task.get("name", ""),
+                "date": _parse_task_date(task),
+                "source": "clickup",
+                "url": task.get("url"),
+            }
+        )
+    items.sort(key=lambda x: x.get("date") or "", reverse=True)
+    return items[:limit]
+
+
+def commitments_from_transcripts(convos: list[dict]) -> list[dict]:
+    """Best-effort commitment lines from ClickUp transcript summaries."""
+    items: list[dict] = []
+    for c in convos:
+        text = c.get("transcript") or ""
+        for line in text.splitlines():
+            stripped = line.strip().lstrip("-•* ").strip()
+            if not stripped or len(stripped) < 12:
+                continue
+            lower = stripped.lower()
+            if any(
+                kw in lower
+                for kw in ("will ", "need to", "follow up", "reach out", "call ", "send ")
+            ):
+                items.append(
+                    {
+                        "title": stripped[:120],
+                        "detail": c.get("title", ""),
+                        "date": c.get("date"),
+                        "source": c.get("source", "clickup"),
+                    }
+                )
+    return items[:15]
+
+
 def overdue_tasks() -> list[dict]:
     """Team Pulse shape: {person, task, due, days_late}."""
     if not configured():
@@ -259,11 +451,16 @@ def ingest_live(svc=None) -> dict:
     summary = clickup_ingest.ingest_records(records, svc)
     summary["records_fetched"] = len(records)
     summary["tasks_fetched"] = sum(1 for r in records if r.get("type") == "task")
+    summary["transcripts_fetched"] = sum(
+        1 for r in records if r.get("record_kind") == "voice_transcript"
+    )
     return summary
 
 
 def record_metadata(record: dict) -> dict:
     """Metadata stored with each ingested ClickUp item."""
+    if record.get("record_kind") == "voice_transcript":
+        return voice_transcript_metadata(record)
     if record.get("collection") == "decisions":
         return decision_metadata(record)
     return {
