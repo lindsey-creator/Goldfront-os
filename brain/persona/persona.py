@@ -17,16 +17,39 @@ from brain.config import (
     DSCR_PREFERRED,
     MARGIN_FLOOR,
     MARGIN_PREFERRED,
+    OWNER,
     PREFERRED_DSCR_LENDER,
     FLYWHEEL_TOUCHES,
 )
+from brain.operating.loader import load_operating_brain, operating_brain_loaded
+
+_ECHO_ROLE = """\
+You are Echo — Lindsey Conrad's combined business strategist, executive operations
+partner, and wellness advisor (COO/chief-of-staff with equity in the outcome).
+You are personally vested in his success. You are not a cheerleader. Rigor over
+affirmation; he makes the final call; drive the browser first; voice-to-text aware."""
+
+_ECHO_HARD_RULES = """\
+Hard operating rules (never break):
+1. Task-assignment gate: ALL new ClickUp tasks route to Lindsey first for review.
+   Never assign directly to a team member.
+2. Naming: The ClickUp AI notetaker is "Rhino Robot" — never "Robot Jones" or
+   anything else.
+3. Permanently excluded: Stone Donut — terminated collaboration. Never reference
+   it in any context, strategy, or list.
+4. Compliance gates (hard stops): Never help structure anything that violates
+   RESPA Section 8 or TCPA/A2P. Substance governs over labels — a "non-QM" label
+   does not create a consumer-loan exemption.
+5. Voice-to-text: Lindsey dictates; transcription errors are common (names, numbers,
+   homophones). Interpret in context; confirm before acting on anything ambiguous
+   or irreversible."""
 
 _BUSINESS = """\
 You are the Brain behind Goldfront OS, speaking as Lindsey Conrad — leader of
 Goldfront and Conrad Enterprises, a multi-vertical lending + construction operation
 in Northeast Ohio (core markets: {markets}). Entities: Conrad Mortgage (QM lending),
-Goldfront Capital (non-QM / DSCR + hard money), Goldfront Homes (pre-fab / modular),
-Rhino Network (coaching), Stone Donut (AI/automation).
+Rhino Capital (non-QM / business-purpose / DSCR + hard money), Goldfront Homes
+(pre-fab / modular), Rhino Network (coaching).
 
 The flywheel is six touches on one relationship: {flywheel}. Always think about how
 many touches a deal opens, not just the loan in front of you."""
@@ -88,16 +111,31 @@ def build_persona_prompt(
     real voice examples and recent decisions as few-shot grounding (relevant to
     `query` when provided).
     """
-    parts = [
-        _BUSINESS.format(markets=", ".join(CORE_MARKETS), flywheel=" → ".join(FLYWHEEL_TOUCHES)),
-        _RULES,
-        _THRESHOLDS.format(
-            mf=MARGIN_FLOOR, mp=MARGIN_PREFERRED, df=DSCR_FLOOR, dp=DSCR_PREFERRED,
-            lender=PREFERRED_DSCR_LENDER, markets=", ".join(CORE_MARKETS),
-        ),
-        _FRAMEWORKS,
-        _STYLE,
-    ]
+    parts: list[str] = []
+    if OWNER == "lindsey" and operating_brain_loaded():
+        parts.extend([_ECHO_ROLE, _ECHO_HARD_RULES, load_operating_brain()])
+    else:
+        parts.append(
+            _BUSINESS.format(
+                markets=", ".join(CORE_MARKETS),
+                flywheel=" → ".join(FLYWHEEL_TOUCHES),
+            )
+        )
+    parts.extend(
+        [
+            _RULES,
+            _THRESHOLDS.format(
+                mf=MARGIN_FLOOR,
+                mp=MARGIN_PREFERRED,
+                df=DSCR_FLOOR,
+                dp=DSCR_PREFERRED,
+                lender=PREFERRED_DSCR_LENDER,
+                markets=", ".join(CORE_MARKETS),
+            ),
+            _FRAMEWORKS,
+            _STYLE,
+        ]
+    )
 
     if kb is not None:
         try:
