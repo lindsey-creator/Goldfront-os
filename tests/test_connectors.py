@@ -203,7 +203,18 @@ def test_ghl_fetch_summary(monkeypatch):
         resp = MagicMock()
         resp.raise_for_status = MagicMock()
         if "contacts" in url:
-            resp.json.return_value = {"contacts": [{"id": "1"}, {"id": "2"}]}
+            resp.json.return_value = {
+                "contacts": [
+                    {
+                        "id": "1",
+                        "firstName": "Jane",
+                        "lastName": "Doe",
+                        "phone": "555-0100",
+                        "dateAdded": "2026-07-01",
+                    },
+                    {"id": "2", "firstName": "John", "lastName": "Smith"},
+                ]
+            }
         elif "conversations" in url:
             resp.json.return_value = {
                 "conversations": [{"unreadCount": 2, "lastMessageType": "missed_call"}]
@@ -215,6 +226,8 @@ def test_ghl_fetch_summary(monkeypatch):
     with patch("httpx.get", side_effect=fake_get):
         summary = ghl.fetch_crm_summary()
         assert summary["new_leads"] == 2
+        assert len(summary["leads"]) == 2
+        assert summary["leads"][0]["title"] == "Jane Doe"
         assert summary["unread_texts"] >= 0
 
 

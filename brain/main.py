@@ -159,6 +159,12 @@ def crm_ghl():
     return _cockpit.ghl_crm()
 
 
+@app.get("/audio/recent")
+def audio_recent(limit: int = 12):
+    """Fieldy + ClickUp transcripts for the Echo Intel lane."""
+    return _cockpit.audio_recent(limit=limit)
+
+
 @app.get("/ingest/clickup/status")
 def ingest_clickup_status():
     return last_sync_result()

@@ -69,7 +69,7 @@ class CockpitRead:
         if fieldy.configured():
             try:
                 end = date.today()
-                start = end - timedelta(days=1)
+                start = end - timedelta(days=7)
                 fieldy_convos = fieldy.fetch_conversations(
                     start=start,
                     end=end,
@@ -617,7 +617,38 @@ class CockpitRead:
             "missed_calls": data.get("missed_calls"),
             "unread_texts": data.get("unread_texts"),
             "pipeline": data.get("pipeline", []),
+            "leads": data.get("leads", []),
         }
+
+    def audio_recent(self, limit: int = 12) -> dict:
+        """Fieldy + ClickUp meeting transcripts for the Echo Intel lane."""
+        convos, voice_source = self._voice_convos(days_back=7)
+        items: list[dict] = []
+        for c in convos[:limit]:
+            items.append(
+                {
+                    "title": c.get("title") or "Meeting transcript",
+                    "detail": (c.get("transcript") or "")[:240],
+                    "date": c.get("date"),
+                    "source": voice_source or c.get("source", "clickup"),
+                    "url": c.get("url"),
+                }
+            )
+
+        if items:
+            return {
+                "status": "ok",
+                "sources": [voice_source] if voice_source else [],
+                "items": items,
+            }
+        if fieldy.configured() or clickup.configured():
+            return {
+                "status": "ok",
+                "sources": [voice_source] if voice_source else [],
+                "items": [],
+                "note": "No transcripts in the last 7 days.",
+            }
+        return _needs("fieldy")
 
     def counts(self) -> dict:
         return {

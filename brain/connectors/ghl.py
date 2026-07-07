@@ -51,6 +51,23 @@ def fetch_crm_summary() -> dict:
     contacts = _get("/contacts/", {"locationId": loc, "limit": 20, "sortBy": "date_added"})
     contact_list = contacts.get("contacts", [])
 
+    leads: list[dict] = []
+    for c in contact_list:
+        first = (c.get("firstName") or "").strip()
+        last = (c.get("lastName") or "").strip()
+        name = f"{first} {last}".strip() or (c.get("contactName") or "").strip() or "Unknown"
+        phone = (c.get("phone") or c.get("phoneNumber") or "").strip()
+        email = (c.get("email") or "").strip()
+        date_added = (c.get("dateAdded") or c.get("date_added") or "")[:10]
+        leads.append(
+            {
+                "title": name,
+                "detail": phone or email or "No phone on file",
+                "date": date_added,
+                "source": "ghl",
+            }
+        )
+
     # Conversations / unread (endpoint shape per GHL API v2)
     unread_texts = 0
     missed_calls = 0
@@ -87,6 +104,7 @@ def fetch_crm_summary() -> dict:
         "missed_calls": missed_calls,
         "unread_texts": unread_texts,
         "pipeline": pipeline,
+        "leads": leads,
     }
 
 
