@@ -69,6 +69,10 @@ class CockpitRead:
         if fieldy.configured():
             try:
                 fieldy_convos = fieldy.fetch_yesterday()
+                if not fieldy_convos:
+                    end = date.today()
+                    start = end - timedelta(days=1)
+                    fieldy_convos = fieldy.fetch_conversations(start=start, end=end)
                 if fieldy_convos:
                     return fieldy_convos, "fieldy"
             except (ConnectorNotConfigured, Exception):
@@ -374,6 +378,7 @@ class CockpitRead:
 
     def blindspots(self) -> dict:
         """Surface gaps from connected sources only — never a missing-connector wall."""
+        self._ensure_clickup_sync()
         items: list[dict] = []
         sources: list[str] = []
 
@@ -437,6 +442,7 @@ class CockpitRead:
         }
 
     def watchlist(self) -> dict:
+        self._ensure_clickup_sync()
         items: list[dict] = []
         sources: list[str] = []
 
@@ -515,6 +521,7 @@ class CockpitRead:
         return _needs("google_calendar")
 
     def team_pulse(self) -> dict:
+        self._ensure_clickup_sync()
         overdue: list[dict] = []
         gaps: list[dict] = []
         sources: list[str] = []

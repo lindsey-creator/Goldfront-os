@@ -10,7 +10,7 @@ from brain.connectors import clickup
 
 _last_sync: float = 0.0
 _last_result: dict[str, Any] | None = None
-SYNC_INTERVAL_SEC = 15 * 60  # match Command Center refresh
+SYNC_INTERVAL_SEC = 5 * 60  # match Command Center live polling
 
 
 def last_sync_result() -> dict[str, Any]:
