@@ -7,24 +7,39 @@
 
 ---
 
-## 1. DNS (GoDaddy — conradstrong.com)
+## Manus network restriction (read first)
 
-Point the apex and `www` at Manus. Remove GoDaddy parking / forwarding if present.
+Manus runs Brain on the box, but **inbound ports 80 and 443 are not exposed to the public internet**. A GoDaddy A record to `102.210.17.121` will **not** make `https://conradstrong.com` work — HTTPS times out from outside.
 
-| Type  | Name | Value            | TTL  |
-|-------|------|------------------|------|
-| A     | `@`  | `102.210.17.121` | 600s |
-| CNAME | `www`| `conradstrong.com` | 600s (or A → same IP) |
+**Permanent fix:** [Cloudflare Tunnel](CLOUDFLARE-CONRADSTRONG.md) — run `sudo bash deploy/cloudflared-manus.sh` on Manus after adding the domain to Cloudflare.
 
-Verify from your Mac:
+**Interim:** Quick tunnel (`cloudflared tunnel --url http://127.0.0.1:8000`) gives a random `*.trycloudflare.com` URL while you set up the real tunnel.
+
+| Check (2026-07-07) | Result |
+|--------------------|--------|
+| `https://decided-watts-xhtml-disabilities.trycloudflare.com/health` | 200 OK |
+| `https://conradstrong.com/health` | Timeout (expected until Cloudflare Tunnel) |
+
+---
+
+## 1. DNS — use Cloudflare Tunnel (not A → Manus IP)
+
+Do **not** point `@` at `102.210.17.121` for public access. Follow **`deploy/CLOUDFLARE-CONRADSTRONG.md`**:
+
+1. Add `conradstrong.com` to Cloudflare; move GoDaddy nameservers to Cloudflare.
+2. On Manus: `sudo bash deploy/cloudflared-manus.sh` (tunnel → `localhost:8000`).
+3. DNS: CNAME `@` and `www` → tunnel (`*.cfargotunnel.com`), proxied (orange cloud).
+4. SSL/TLS mode: **Full**.
+
+Legacy nginx + certbot on Manus (sections below) only matter if you later get direct 80/443 access or use tunnel without terminating TLS locally.
+
+Verify from your Mac after tunnel is live:
 
 ```bash
-dig +short conradstrong.com A
-dig +short www.conradstrong.com A
-# expect: 102.210.17.121 (only — drop 3.33.x / 15.197.x parking IPs)
+dig +short conradstrong.com
+# expect Cloudflare IPs (e.g. 104.x), not 102.210.17.121
+curl -sf https://conradstrong.com/health | python3 -m json.tool
 ```
-
-Certbot will fail until DNS resolves to the Manus box.
 
 ---
 
@@ -72,6 +87,7 @@ sudo systemctl status superman-brain --no-pager
 
 ## Notes
 
+- **Public access:** Manus blocks inbound 80/443 — use **Cloudflare Tunnel** (`deploy/CLOUDFLARE-CONRADSTRONG.md`, `deploy/cloudflared-manus.sh`), not an A record to the Manus IP.
 - **Primary site:** `https://conradstrong.com` — UI and API share one origin; no `VITE_BRAIN_API` needed in production.
 - **Legacy aliases:** `commandcenter.theconradteam.com` and `command.theconradteam.com` stay in the same nginx `server_name` block (see `deploy/nginx-conradstrong.com.conf`). Disable or remove old per-domain nginx site files on Manus if they conflict.
 - **Older docs:** `deploy/COMMANDCENTER-DEPLOY.md` documents the `commandcenter` subdomain path; prefer this file for new deploys.
