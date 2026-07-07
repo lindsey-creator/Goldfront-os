@@ -1,8 +1,10 @@
 # Deploy Conrad Command Center at commandcenter.theconradteam.com
 
+> **Primary site is now `conradstrong.com`.** See `deploy/CONRADSTRONG-DEPLOY.md` for DNS + Manus paste block. This subdomain remains a **legacy alias** (included in `deploy/nginx-conradstrong.com.conf`).
+
 **Manus box:** `102.210.17.121`  
 **App:** uvicorn `superman-brain` on `:8000` (serves React `dist` + Brain API)  
-**Nginx config:** `deploy/nginx-commandcenter.theconradteam.com.conf`
+**Nginx config:** `deploy/nginx-commandcenter.theconradteam.com.conf` (legacy) or `deploy/nginx-conradstrong.com.conf` (primary + all aliases)
 
 ---
 
@@ -70,6 +72,7 @@ sudo systemctl status superman-brain --no-pager
 
 ## Notes
 
-- **Same origin:** UI and API share `commandcenter.theconradteam.com` — no `VITE_BRAIN_API` needed in production.
-- **Legacy:** `command.theconradteam.com` may still serve the old dashboard; see `deploy/FIX-COMMAND-NGINX.md` to point it at Brain instead.
+- **Primary:** `https://conradstrong.com` — see `deploy/CONRADSTRONG-DEPLOY.md`.
+- **Same origin:** UI and API share the public hostname — no `VITE_BRAIN_API` needed in production.
+- **Legacy aliases:** `commandcenter.theconradteam.com` and `command.theconradteam.com` proxy to the same Brain via `nginx-conradstrong.com.conf`; see `deploy/FIX-COMMAND-NGINX.md` if an old static dashboard config is still active.
 - **systemd:** `superman-brain` — `journalctl -u superman-brain -n 40` if `/health` fails locally.

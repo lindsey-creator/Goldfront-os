@@ -2,8 +2,8 @@
 
 **Last audited:** 2026-07-06 (Mac local)  
 **Manus IP:** `102.210.17.121`  
-**Public domain (target):** `https://brain.theconradteam.com`  
-**Legacy dashboard (unchanged):** `https://command.theconradteam.com`
+**Public domain (primary):** `https://conradstrong.com` — see `deploy/CONRADSTRONG-DEPLOY.md`  
+**Legacy aliases:** `commandcenter.theconradteam.com`, `command.theconradteam.com`, `brain.theconradteam.com`
 
 ---
 
@@ -20,7 +20,7 @@
 | Local uvicorn `:8000` | ✅ | `/health` + `/` return 200 |
 | Local `npm run build` | ⚠️ | Not verified in CI shell (no `npm` on PATH); `conrad-command-center/dist/` exists from prior build — run `npm run build` on Mac or Manus |
 | `brain-deploy.zip` on Mac | ✅ | See Option C (created at `~/Documents/Claude/Projects/Brain/brain-deploy.zip`) |
-| `brain.theconradteam.com/health` | ❓ | **Not responding** from outside — run Option A on Manus to finish |
+| `conradstrong.com/health` | ❓ | **Not responding** from outside — run `deploy/CONRADSTRONG-DEPLOY.md` paste block on Manus |
 | Manus repos / systemd | ❓ | **Verify on box** (commands below) |
 
 ---
@@ -146,11 +146,11 @@ curl -sf http://127.0.0.1:8000/connectors/status | python3 -m json.tool | head -
 curl -sf -o /dev/null -w 'GET / HTTP %{http_code}\n' http://127.0.0.1:8000/
 
 # nginx / public (after DNS)
-curl -sf -o /dev/null -w 'https health %{http_code}\n' https://brain.theconradteam.com/health || true
-curl -sf https://brain.theconradteam.com/health || echo "DNS/TLS not ready yet"
+curl -sf -o /dev/null -w 'https health %{http_code}\n' https://conradstrong.com/health || true
+curl -sf https://conradstrong.com/health || echo "DNS/TLS not ready yet"
 ```
 
-**DNS:** A record `brain.theconradteam.com` → `102.210.17.121` (same as `command.theconradteam.com`).
+**DNS:** A record `conradstrong.com` → `102.210.17.121` (and `www` CNAME or A). Legacy: `commandcenter` / `command` / `brain` subdomains on `theconradteam.com` → same IP.
 
 ---
 
@@ -177,8 +177,8 @@ bash deploy/build_and_run.sh
 
 ## Finish in 3 steps (simplest path)
 
-1. **Manus terminal:** `curl -fsSL https://raw.githubusercontent.com/lindsey-creator/Goldfront-os/master/deploy/manus_bootstrap.sh | bash`
-2. **DNS panel:** A record `brain` → `102.210.17.121` (if not already).
-3. **Verify:** `curl -sf http://127.0.0.1:8000/health` on Manus, then `https://brain.theconradteam.com/health` from anywhere.
+1. **Manus terminal:** paste block from `deploy/CONRADSTRONG-DEPLOY.md` (or `curl -fsSL …/manus_bootstrap.sh | bash`)
+2. **DNS panel:** A record `@` on `conradstrong.com` → `102.210.17.121` (remove GoDaddy parking if present).
+3. **Verify:** `curl -sf http://127.0.0.1:8000/health` on Manus, then `https://conradstrong.com/health` from anywhere.
 
-Old dashboard stays at `https://command.theconradteam.com`.
+Legacy aliases (`commandcenter.theconradteam.com`, `command.theconradteam.com`) share the same nginx config.

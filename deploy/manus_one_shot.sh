@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Paste/run ON the Manus Ubuntu box (command.theconradteam.com host).
+# Paste/run ON the Manus Ubuntu box (102.210.17.121). Primary: conradstrong.com
 # Pulls connector keys from /var/www/dashboard/.env → goldfront-os/.env, then deploys.
 set -euo pipefail
 

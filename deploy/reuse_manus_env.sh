@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Find connector credentials already on the Manus box (command.theconradteam.com, etc.)
+# Find connector credentials already on the Manus box (conradstrong.com / legacy theconradteam.com hosts)
 # and merge into goldfront-os/.env. Never prints secret values.
+# Fieldy: prefer copying FIELDY_API_TOKEN from your Mac .env; reuse_manus_env only fills gaps.
 set -euo pipefail
 
 BRAIN_DIR="${BRAIN_DIR:-$HOME/Documents/Claude/Projects/Brain/goldfront-os}"
@@ -15,7 +16,7 @@ VARS=(
   CLICKUP_AUTO_SYNC
   GHL_API_KEY
   GHL_LOCATION_ID
-  FIELDY_API_TOKEN
+  # FIELDY_API_TOKEN — copy from Mac goldfront-os/.env only (not auto-hunted here)
   FIELDY_API_BASE
   FIELDY_SPEAKER_ME
   GOOGLE_CLIENT_ID

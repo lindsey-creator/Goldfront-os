@@ -2,8 +2,9 @@
 
 One app, one port. FastAPI serves the Command Center UI after `npm run build`.
 
-**Manus box:** `102.210.17.121` (same host as `command.theconradteam.com`)  
-**Target domain:** `brain.theconradteam.com` → A record to that IP  
+**Manus box:** `102.210.17.121`  
+**Primary domain:** `https://conradstrong.com` → A record to that IP (see `deploy/CONRADSTRONG-DEPLOY.md`)  
+**Legacy aliases:** `commandcenter.theconradteam.com`, `command.theconradteam.com`, `brain.theconradteam.com`  
 **Layout on the server:**
 
 ```

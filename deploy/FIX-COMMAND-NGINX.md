@@ -1,5 +1,7 @@
 # Fix command.theconradteam.com nginx → Brain (uvicorn :8000)
 
+> **Preferred:** use `deploy/nginx-conradstrong.com.conf` — it proxies **conradstrong.com** (primary) plus legacy `commandcenter` / `command` hostnames to `:8000`. See `deploy/CONRADSTRONG-DEPLOY.md`.
+
 **Symptom:** `https://command.theconradteam.com` serves stale static HTML (June 15 dashboard) for all paths including `/health`. Brain may be running on `:8000` locally but nginx is not proxying.
 
 **Repo note:** `deploy/` has `nginx-brain.theconradteam.com.conf` and `nginx-brain.initial.conf` only — **no** `nginx-command.theconradteam.com.conf`. The live command site was likely `root /var/www/dashboard` (or similar) on the Manus box. This fix replaces that with the same `proxy_pass` pattern as the brain config.

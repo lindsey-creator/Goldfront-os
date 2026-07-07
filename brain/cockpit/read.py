@@ -52,7 +52,7 @@ class CockpitRead:
         if not fieldy.configured():
             return None
         try:
-            return fieldy.fetch_yesterday()
+            return fieldy.fetch_yesterday(include_transcripts=False)
         except (ConnectorNotConfigured, Exception):
             return None
 
@@ -68,11 +68,13 @@ class CockpitRead:
         """Fieldy when it has data; otherwise ClickUp transcripts (Plaud/Fieldy archive)."""
         if fieldy.configured():
             try:
-                fieldy_convos = fieldy.fetch_yesterday()
-                if not fieldy_convos:
-                    end = date.today()
-                    start = end - timedelta(days=1)
-                    fieldy_convos = fieldy.fetch_conversations(start=start, end=end)
+                end = date.today()
+                start = end - timedelta(days=1)
+                fieldy_convos = fieldy.fetch_conversations(
+                    start=start,
+                    end=end,
+                    include_transcripts=False,
+                )
                 if fieldy_convos:
                     return fieldy_convos, "fieldy"
             except (ConnectorNotConfigured, Exception):
@@ -408,7 +410,7 @@ class CockpitRead:
         if fieldy.configured():
             sources.append("fieldy")
             try:
-                convos = fieldy.fetch_yesterday()
+                convos = fieldy.fetch_yesterday(include_transcripts=False)
                 if not convos:
                     items.append(
                         {
@@ -534,7 +536,7 @@ class CockpitRead:
         if fieldy.configured():
             sources.append("fieldy")
             try:
-                convos = fieldy.fetch_yesterday()
+                convos = fieldy.fetch_yesterday(include_transcripts=False)
                 for item in fieldy.commitments_from_convos(convos)[:5]:
                     gaps.append(
                         {

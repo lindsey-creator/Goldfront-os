@@ -4,6 +4,8 @@
 
 **Already set locally (skip):** `CLICKUP_API_TOKEN`, `FIELDY_API_TOKEN`
 
+**Manus Fieldy:** copy `FIELDY_API_TOKEN` from Mac `goldfront-os/.env` — no new dashboard token.
+
 ---
 
 Paste these **4** strings in chat, one message each:

@@ -31,13 +31,13 @@ PASTE ON MANUS (connectors + Brain restart)
 ================================================================================
 cd ~/Documents/Claude/Projects/Brain/goldfront-os
 bash deploy/reuse_manus_env.sh
-grep -q '^CLICKUP_API_TOKEN=.' .env || nano .env   # add CLICKUP + FIELDY if reuse missed them
+grep -q '^FIELDY_API_TOKEN=.' .env || (echo 'Paste FIELDY_API_TOKEN from Mac .env into Manus .env' && nano .env)
 sudo systemctl restart superman-brain && sleep 2
 curl -sf http://127.0.0.1:8000/health && echo
 curl -sf http://127.0.0.1:8000/connectors/status | python3 -m json.tool
 
-# If https://command.theconradteam.com/health returns HTML (not JSON), fix nginx:
-#   bash deploy/FIX-COMMAND-NGINX.md  → copy the paste block from that file
+# If https://conradstrong.com/health returns HTML (not JSON), fix nginx:
+#   deploy/CONRADSTRONG-DEPLOY.md  → paste block on Manus
 ================================================================================
 Add later (not blocking): Google OAuth, Whoop, Apple Health, Anthropic
 EOF

@@ -102,9 +102,9 @@ is_set CLICKUP_API_TOKEN || prompt_secret CLICKUP_API_TOKEN \
 is_set CLICKUP_WORKSPACE_ID || prompt_plain CLICKUP_WORKSPACE_ID \
   "ClickUp workspace ID" "90141259054"
 
-# Fieldy
+# Fieldy — token already on Mac .env; only prompt if missing
 is_set FIELDY_API_TOKEN || prompt_secret FIELDY_API_TOKEN \
-  "https://fieldy.ai → account / API settings"
+  "paste FIELDY_API_TOKEN from your Mac goldfront-os/.env (do not hunt a new token)"
 
 # Google OAuth trio
 if ! is_set GOOGLE_CLIENT_ID || ! is_set GOOGLE_CLIENT_SECRET || ! is_set GOOGLE_REFRESH_TOKEN; then

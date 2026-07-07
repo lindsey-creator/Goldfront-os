@@ -29,6 +29,16 @@ def _headers() -> dict[str, str]:
     return {"Authorization": f"Bearer {token}"}
 
 
+def _timeout(*, quick: bool = False) -> httpx.Timeout:
+    default = "8" if quick else os.getenv("FIELDY_REQUEST_TIMEOUT", "20")
+    seconds = float(default)
+    return httpx.Timeout(seconds, connect=min(5.0, seconds))
+
+
+def _fallback_transcript(conv: dict) -> str:
+    return (conv.get("summary") or conv.get("title") or "").strip()
+
+
 def _range_params(start: date, end: date) -> dict[str, str]:
     return {
         "startTime": f"{start.isoformat()}T00:00:00Z",
@@ -36,10 +46,17 @@ def _range_params(start: date, end: date) -> dict[str, str]:
     }
 
 
-def _get_paginated(path: str, params: dict[str, str]) -> list[dict]:
+def _get_paginated(
+    path: str,
+    params: dict[str, str],
+    *,
+    max_pages: int = 10,
+    quick: bool = False,
+) -> list[dict]:
     items: list[dict] = []
     cursor: str | None = None
-    while True:
+    pages = 0
+    while pages < max_pages:
         query = dict(params)
         if cursor:
             query["cursor"] = cursor
@@ -47,12 +64,13 @@ def _get_paginated(path: str, params: dict[str, str]) -> list[dict]:
             f"{_api_root()}{path}",
             headers=_headers(),
             params=query,
-            timeout=60.0,
+            timeout=_timeout(quick=quick),
         )
         resp.raise_for_status()
         payload = resp.json()
         items.extend(payload.get("items", []))
         cursor = payload.get("nextCursor")
+        pages += 1
         if not cursor:
             break
     return items
@@ -63,17 +81,26 @@ def _transcript_for_conversation(conv: dict) -> str:
     if content:
         return content
 
+    summary = (conv.get("summary") or "").strip()
+    if summary:
+        return summary
+
     start = conv.get("startTime")
     end = conv.get("endTime")
     if not start or not end:
-        return (conv.get("summary") or "").strip()
+        return _fallback_transcript(conv)
 
-    segments = _get_paginated(
-        "/transcriptions",
-        {"startTime": start, "endTime": end},
-    )
+    try:
+        segments = _get_paginated(
+            "/transcriptions",
+            {"startTime": start, "endTime": end},
+            max_pages=5,
+        )
+    except httpx.HTTPError:
+        return _fallback_transcript(conv)
+
     if not segments:
-        return (conv.get("summary") or "").strip()
+        return _fallback_transcript(conv)
 
     lines: list[str] = []
     for seg in segments:
@@ -82,16 +109,21 @@ def _transcript_for_conversation(conv: dict) -> str:
             continue
         speaker = (seg.get("speaker") or "").strip()
         lines.append(f"{speaker}: {text}" if speaker else text)
-    return "\n".join(lines)
+    transcript = "\n".join(lines)
+    return transcript or _fallback_transcript(conv)
 
 
 def fetch_conversations(
     start: date | None = None,
     end: date | None = None,
+    *,
+    include_transcripts: bool = True,
 ) -> list[dict]:
     """
     Conversations shaped for fieldy_ingest.ingest_conversations:
     id, title, date, transcript, speaker_me.
+
+    Set include_transcripts=False for cockpit reads (one list call; titles only).
     """
     if not configured():
         raise ConnectorNotConfigured(CONNECTOR, ENV_VARS)
@@ -99,17 +131,28 @@ def fetch_conversations(
     start = start or (end - timedelta(days=1))
     speaker_me = os.getenv("FIELDY_SPEAKER_ME", "Lindsey")
 
-    raw = _get_paginated("/conversations", _range_params(start, end))
+    raw = _get_paginated(
+        "/conversations",
+        _range_params(start, end),
+        quick=not include_transcripts,
+    )
 
     convos: list[dict] = []
     for c in raw:
         start_time = c.get("startTime") or ""
+        if include_transcripts:
+            try:
+                transcript = _transcript_for_conversation(c)
+            except Exception:
+                transcript = _fallback_transcript(c)
+        else:
+            transcript = _fallback_transcript(c)
         convos.append(
             {
                 "id": c.get("id"),
                 "title": c.get("title") or c.get("name", ""),
                 "date": start_time[:10] if start_time else "",
-                "transcript": _transcript_for_conversation(c),
+                "transcript": transcript,
                 "my_utterances": c.get("my_utterances"),
                 "speaker_me": c.get("speaker_me") or speaker_me,
             }
@@ -117,9 +160,13 @@ def fetch_conversations(
     return convos
 
 
-def fetch_yesterday() -> list[dict]:
+def fetch_yesterday(*, include_transcripts: bool = True) -> list[dict]:
     yesterday = date.today() - timedelta(days=1)
-    return fetch_conversations(start=yesterday, end=yesterday)
+    return fetch_conversations(
+        start=yesterday,
+        end=yesterday,
+        include_transcripts=include_transcripts,
+    )
 
 
 def commitments_from_convos(convos: list[dict]) -> list[dict]:

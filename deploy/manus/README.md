@@ -5,7 +5,8 @@ Conrad Command Center (React) + Goldfront OS Brain (FastAPI) on **one port**: `h
 ## SSH search result (this Mac)
 
 - `~/.ssh/config` has **no** `Host manus` entry (only `github.com`).
-- `command.theconradteam.com` → `102.210.17.121` (likely your public dashboard host).
+- `conradstrong.com` → `102.210.17.121` (primary Command Center + Brain).
+- Legacy: `command.theconradteam.com`, `commandcenter.theconradteam.com` → same IP (nginx aliases).
 - SSH to that IP from this machine: **Permission denied (publickey)** — add a `Host manus` block and key before using `deploy-from-dev-mac.sh`.
 
 ## Manual setup on the Manus machine (run these ON Manus)
@@ -98,4 +99,4 @@ docker compose up -d
 
 ## Domain
 
-Your live dashboard is **command.theconradteam.com**. To put this stack on a subdomain, point DNS at Manus and reverse-proxy port 8000 (nginx/Caddy) with HTTPS — same pattern as the existing Command Center.
+Your live dashboard is **conradstrong.com** (primary). Legacy `command.theconradteam.com` / `commandcenter.theconradteam.com` alias the same stack — see `deploy/CONRADSTRONG-DEPLOY.md`.

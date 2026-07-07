@@ -19,7 +19,7 @@ Each connector is independent. Add only the keys you need. Restart the Brain aft
 | **Anthropic /chat** | `ANTHROPIC_API_KEY` | ⏳ Pending | **High** — live Brain narration |
 | **Google Calendar** | `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_REFRESH_TOKEN` | ⏳ Pending | Medium |
 | **Gmail** | Same Google OAuth trio | ⏳ Pending | Medium (shares Google OAuth) |
-| **Fieldy** | `FIELDY_API_TOKEN` | ⏳ Pending | Medium |
+| **Fieldy** | `FIELDY_API_TOKEN` | ✓ (local `.env`) | Medium |
 | **Whoop** | `WHOOP_ACCESS_TOKEN` | ⏳ Pending | Low |
 | **Apple Health** | `APPLE_HEALTH_EXPORT_PATH` | ⏳ Pending | Low (local JSON file only) |
 
@@ -46,7 +46,7 @@ GHL_API_KEY=                          # Sub-account → Settings → Private Int
 GHL_LOCATION_ID=                      # Location ID from GHL sub-account URL or settings
 
 # ── Fieldy ─────────────────────────────────────────────────────────────────
-FIELDY_API_TOKEN=                     # https://fieldy.ai → account API settings
+FIELDY_API_TOKEN=                     # copy from your Mac goldfront-os/.env (you already set this)
 FIELDY_API_BASE=https://api.fieldy.ai
 FIELDY_SPEAKER_ME=Lindsey
 
@@ -76,7 +76,7 @@ DECISION_HALFLIFE_DAYS=180
 | `CLICKUP_WORKSPACE_ID` | ClickUp → Workspace settings, or `90141259054` (default in `.env.example`) |
 | `GHL_API_KEY` | GHL sub-account → **Settings → Private Integrations** → Create → copy token |
 | `GHL_LOCATION_ID` | GHL location settings or URL (`/location/{id}/`) |
-| `FIELDY_API_TOKEN` | [fieldy.ai](https://fieldy.ai) account API settings |
+| `FIELDY_API_TOKEN` | **Already on your Mac** — copy `FIELDY_API_TOKEN` from local `goldfront-os/.env` to Manus `.env` (do not hunt a new token) |
 | `GOOGLE_CLIENT_ID` / `SECRET` | [Google Cloud Console → Credentials](https://console.cloud.google.com/apis/credentials) → OAuth 2.0 Client |
 | `GOOGLE_REFRESH_TOKEN` | One-time OAuth consent with scopes: `calendar.readonly`, `gmail.readonly` (see Google section below) |
 | `WHOOP_ACCESS_TOKEN` | [Whoop Developer Portal](https://developer.whoop.com) → register app → OAuth |
@@ -86,7 +86,9 @@ DECISION_HALFLIFE_DAYS=180
 
 ## Fast path on Manus — reuse existing secrets
 
-Manus already has connector keys in `/var/www/dashboard/.env` (command center). Pull them into the Brain:
+**Fieldy:** copy `FIELDY_API_TOKEN` from your Mac `goldfront-os/.env` into Manus `goldfront-os/.env`. Do not generate a new token in the Fieldy dashboard unless the Mac value is missing.
+
+Manus may also have connector keys in `/var/www/dashboard/.env` (command center). Pull them into the Brain:
 
 ```bash
 cd ~/Documents/Claude/Projects/Brain/goldfront-os
@@ -99,6 +101,16 @@ curl -sf http://127.0.0.1:8000/connectors/status | python3 -m json.tool
 
 - `GHL_TEAM_PIT_TOKEN` or `GHL_PERSONAL_PIT_TOKEN` → `GHL_API_KEY`
 - `GHL_LOCATION_ID` from dashboard env
+
+**Fieldy:** `reuse_manus_env.sh` does **not** pull `FIELDY_API_TOKEN`. Copy it from your Mac:
+
+```bash
+# On Mac — copy full .env (includes FIELDY_API_TOKEN) to Manus
+scp ~/Documents/Claude/Projects/Brain/goldfront-os/.env \
+  lindseyconrad@102.210.17.121:~/Documents/Claude/Projects/Brain/goldfront-os/.env
+```
+
+Or paste `FIELDY_API_TOKEN` from Mac `.env` into Manus `.env` manually.
 
 ---
 
@@ -153,7 +165,8 @@ Context:
 - Command Center UI: ~/Documents/Claude/Projects/Brain/conrad-command-center
 - Env file: ~/Documents/Claude/Projects/Brain/goldfront-os/.env
 - systemd service: superman-brain (port 8000)
-- GHL is already connected. ClickUp, Anthropic, Google, Fieldy, Whoop, Apple Health are still pending.
+- GHL is already connected. ClickUp, Anthropic, Google, Whoop, Apple Health are still pending.
+- Fieldy: copy `FIELDY_API_TOKEN` from Mac `goldfront-os/.env` into Manus `.env` (do not hunt dashboard env).
 
 Do this in order:
 1. Run: bash ~/Documents/Claude/Projects/Brain/goldfront-os/deploy/reuse_manus_env.sh
@@ -197,7 +210,7 @@ curl -sf -X POST http://127.0.0.1:8000/chat \
   -d '{"message":"ping"}' | python3 -c "import sys,json; r=json.load(sys.stdin); print('claude' if 'fallback' not in r.get('mode','').lower() else 'fallback')"
 ```
 
-Or open **Connections** in the UI at `http://127.0.0.1:8000/` (or `https://brain.theconradteam.com` once DNS is live).
+Or open **Connections** in the UI at `http://127.0.0.1:8000/` (or `https://conradstrong.com` once DNS is live).
 
 ---
 

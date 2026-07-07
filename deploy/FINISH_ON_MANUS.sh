@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # =============================================================================
 # FINISH Conrad Command Center + Brain on Manus (Ubuntu)
-# Run this IN THE MANUS TERMINAL on the command.theconradteam.com box.
+# Run this IN THE MANUS TERMINAL on the Manus box (102.210.17.121).
+# Primary site: conradstrong.com — see deploy/CONRADSTRONG-DEPLOY.md
 #
 #   cd ~/Documents/Claude/Projects/Brain/goldfront-os
 #   bash deploy/FINISH_ON_MANUS.sh
@@ -72,8 +73,9 @@ b=load(brain); d=load(dash)
 alias={"GHL_TEAM_PIT_TOKEN":"GHL_API_KEY","GHL_PERSONAL_PIT_TOKEN":"GHL_API_KEY"}
 for src,tgt in alias.items():
     if src in d and tgt not in b: b[tgt]=d[src]
-for k in ("CLICKUP_API_TOKEN","GOOGLE_REFRESH_TOKEN","ANTHROPIC_API_KEY","FIELDY_API_TOKEN"):
+for k in ("CLICKUP_API_TOKEN","GOOGLE_REFRESH_TOKEN","ANTHROPIC_API_KEY"):
     if k in d and k not in b: b[k]=d[k]
+# FIELDY_API_TOKEN: copy from Mac goldfront-os/.env — not merged from dashboard
 b.setdefault("GOLDFRONT_OWNER","lindsey")
 b.setdefault("CLICKUP_AUTO_SYNC","true")
 b.setdefault("CLICKUP_WORKSPACE_ID","90141259054")
@@ -195,7 +197,7 @@ fi
 echo ""
 echo "  LIVE (local):   http://127.0.0.1:8000/"
 echo "  LIVE (public):  http://${PUBLIC_IP:-YOUR_IP}:8000/"
-echo "  LIVE (domain):  https://$DOMAIN/  (after DNS + certbot)"
+echo "  LIVE (domain):  https://conradstrong.com/  (primary; after DNS + certbot)"
 echo ""
-echo "  Old dashboard (unchanged): https://command.theconradteam.com"
+echo "  Legacy aliases: https://commandcenter.theconradteam.com https://command.theconradteam.com"
 echo "=============================================="
