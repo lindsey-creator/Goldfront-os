@@ -20,7 +20,7 @@ Each connector is independent. Add only the keys you need. Restart the Brain aft
 | **Google Calendar** | `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_REFRESH_TOKEN` | ⏳ Pending | Medium |
 | **Gmail** | Same Google OAuth trio | ⏳ Pending | Medium (shares Google OAuth) |
 | **Fieldy** | `FIELDY_API_TOKEN` | ✓ (local `.env`) | Medium |
-| **Whoop** | `WHOOP_ACCESS_TOKEN` | ⏳ Pending | Low |
+| **Whoop** | `WHOOP_CLIENT_ID`, `WHOOP_CLIENT_SECRET`, `WHOOP_REFRESH_TOKEN` | ⏳ Pending | Low — see [WHOOP-SETUP.md](./WHOOP-SETUP.md) |
 | **Apple Health** | `APPLE_HEALTH_EXPORT_PATH` | ⏳ Pending | Low (local JSON file only) |
 
 **Recommended order:** ClickUp → Anthropic → Google (Calendar + Gmail together) → Fieldy → Whoop → Apple Health.
@@ -56,8 +56,11 @@ GOOGLE_CLIENT_SECRET=                 # Same OAuth 2.0 Client ID
 GOOGLE_REFRESH_TOKEN=                 # OAuth flow with Calendar + Gmail scopes (see below)
 GOOGLE_CALENDAR_ID=primary
 
-# ── Whoop ────────────────────────────────────────────────────────────────────
-WHOOP_ACCESS_TOKEN=                   # https://developer.whoop.com → OAuth → access token
+# ── Whoop (OAuth — persistent; see deploy/WHOOP-SETUP.md) ───────────────────
+WHOOP_CLIENT_ID=                      # https://developer.whoop.com
+WHOOP_CLIENT_SECRET=
+WHOOP_REFRESH_TOKEN=                    # python3 scripts/whoop_oauth_setup.py
+# WHOOP_ACCESS_TOKEN=                   # legacy only — expires ~1h
 
 # ── Apple Health (display only — no cloud API) ───────────────────────────────
 APPLE_HEALTH_EXPORT_PATH=             # Path on Manus to a JSON export your sync writes
@@ -79,7 +82,7 @@ DECISION_HALFLIFE_DAYS=180
 | `FIELDY_API_TOKEN` | **Already on your Mac** — copy `FIELDY_API_TOKEN` from local `goldfront-os/.env` to Manus `.env` (do not hunt a new token) |
 | `GOOGLE_CLIENT_ID` / `SECRET` | [Google Cloud Console → Credentials](https://console.cloud.google.com/apis/credentials) → OAuth 2.0 Client |
 | `GOOGLE_REFRESH_TOKEN` | One-time OAuth consent with scopes: `calendar.readonly`, `gmail.readonly` (see Google section below) |
-| `WHOOP_ACCESS_TOKEN` | [Whoop Developer Portal](https://developer.whoop.com) → register app → OAuth |
+| `WHOOP_CLIENT_ID` / `SECRET` / `REFRESH_TOKEN` | [Whoop Developer Portal](https://developer.whoop.com) → register app → `python3 scripts/whoop_oauth_setup.py` — see [WHOOP-SETUP.md](./WHOOP-SETUP.md) |
 | `APPLE_HEALTH_EXPORT_PATH` | Local path on Manus where a health sync script drops JSON |
 
 ---
@@ -146,6 +149,7 @@ ENV=~/Documents/Claude/Projects/Brain/goldfront-os/.env
 for key in ANTHROPIC_API_KEY CLICKUP_API_TOKEN CLICKUP_WORKSPACE_ID \
   GHL_API_KEY GHL_LOCATION_ID FIELDY_API_TOKEN \
   GOOGLE_CLIENT_ID GOOGLE_CLIENT_SECRET GOOGLE_REFRESH_TOKEN \
+  WHOOP_CLIENT_ID WHOOP_CLIENT_SECRET WHOOP_REFRESH_TOKEN \
   WHOOP_ACCESS_TOKEN APPLE_HEALTH_EXPORT_PATH; do
   if grep -q "^${key}=.\+" "$ENV" 2>/dev/null; then echo "$key=SET"; else echo "$key=UNSET"; fi
 done
@@ -199,7 +203,7 @@ curl -sf http://127.0.0.1:8000/connectors/status | python3 -m json.tool
 | `google_calendar` | Google OAuth trio set | Connections → Google Calendar **Live** |
 | `gmail` | Same Google OAuth trio | Connections → Gmail **Live** |
 | `fieldy` | `FIELDY_API_TOKEN` set | Connections → Fieldy **Live** |
-| `whoop` | `WHOOP_ACCESS_TOKEN` set | Connections → Whoop **Live** |
+| `whoop` | OAuth trio or legacy `WHOOP_ACCESS_TOKEN` | Connections → Whoop **Live** — see [WHOOP-SETUP.md](./WHOOP-SETUP.md) |
 | `apple_health` | `APPLE_HEALTH_EXPORT_PATH` points to readable JSON | Connections → Apple Health **Live** |
 
 **Anthropic** is not in `/connectors/status` — test via `/chat`:

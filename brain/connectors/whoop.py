@@ -2,38 +2,37 @@
 
 from __future__ import annotations
 
-import os
 from datetime import date, timedelta
 
 import httpx
 
-from brain.connectors.base import ConnectorNotConfigured, env_required, is_configured
+from brain.connectors.base import ConnectorNotConfigured
+from brain.connectors.whoop_auth import (
+    OAUTH_ENV_VARS,
+    is_whoop_configured,
+    whoop_headers,
+)
 
 API_BASE = "https://api.prod.whoop.com/developer/v2"
 CONNECTOR = "whoop"
-ENV_VARS = ["WHOOP_ACCESS_TOKEN"]
+ENV_VARS = OAUTH_ENV_VARS + ["WHOOP_ACCESS_TOKEN"]
 
 
 def configured() -> bool:
-    return is_configured(*ENV_VARS)
-
-
-def _headers() -> dict[str, str]:
-    token = env_required("WHOOP_ACCESS_TOKEN", CONNECTOR)
-    return {"Authorization": f"Bearer {token}"}
+    return is_whoop_configured()
 
 
 def fetch_recovery() -> dict:
     """
     Recovery, HRV, sleep, strain — display only, never prescribe.
-  """
+    """
     if not configured():
         raise ConnectorNotConfigured(CONNECTOR, ENV_VARS)
     end = date.today()
     start = end - timedelta(days=7)
     resp = httpx.get(
         f"{API_BASE}/recovery",
-        headers=_headers(),
+        headers=whoop_headers(),
         params={"start": start.isoformat(), "end": end.isoformat()},
         timeout=30.0,
     )

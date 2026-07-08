@@ -130,9 +130,19 @@ if ! is_set GOOGLE_CLIENT_ID || ! is_set GOOGLE_CLIENT_SECRET || ! is_set GOOGLE
   fi
 fi
 
-# Whoop
-is_set WHOOP_ACCESS_TOKEN || prompt_secret WHOOP_ACCESS_TOKEN \
-  "https://developer.whoop.com → register app → OAuth access token"
+# Whoop (OAuth — persistent; see deploy/WHOOP-SETUP.md)
+if ! is_set WHOOP_REFRESH_TOKEN; then
+  echo ""
+  echo "── WHOOP (OAuth) ──"
+  echo "   Recommended: python3 scripts/whoop_oauth_setup.py (browser flow)"
+  echo "   Or paste credentials manually:"
+  is_set WHOOP_CLIENT_ID || prompt_secret WHOOP_CLIENT_ID \
+    "https://developer.whoop.com → Client ID"
+  is_set WHOOP_CLIENT_SECRET || prompt_secret WHOOP_CLIENT_SECRET \
+    "Whoop Client Secret"
+  is_set WHOOP_REFRESH_TOKEN || prompt_secret WHOOP_REFRESH_TOKEN \
+    "Refresh token (from whoop_oauth_setup.py)"
+fi
 
 # Apple Health (optional on Mac)
 if ! is_set APPLE_HEALTH_EXPORT_PATH; then
@@ -178,7 +188,8 @@ echo "==> SET / UNSET summary (no values):"
 for key in ANTHROPIC_API_KEY CLICKUP_API_TOKEN CLICKUP_WORKSPACE_ID \
   GHL_API_KEY GHL_LOCATION_ID FIELDY_API_TOKEN \
   GOOGLE_CLIENT_ID GOOGLE_CLIENT_SECRET GOOGLE_REFRESH_TOKEN \
-  WHOOP_ACCESS_TOKEN APPLE_HEALTH_EXPORT_PATH; do
+  WHOOP_CLIENT_ID WHOOP_CLIENT_SECRET WHOOP_REFRESH_TOKEN WHOOP_ACCESS_TOKEN \
+  APPLE_HEALTH_EXPORT_PATH; do
   if is_set "$key"; then echo "  $key=SET"; else echo "  $key=UNSET"; fi
 done
 

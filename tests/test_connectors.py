@@ -22,6 +22,9 @@ def clear_connector_env(monkeypatch):
         "GHL_API_KEY",
         "GHL_LOCATION_ID",
         "WHOOP_ACCESS_TOKEN",
+        "WHOOP_CLIENT_ID",
+        "WHOOP_CLIENT_SECRET",
+        "WHOOP_REFRESH_TOKEN",
         "APPLE_HEALTH_EXPORT_PATH",
         "GOOGLE_CLIENT_ID",
         "GOOGLE_CLIENT_SECRET",
@@ -229,6 +232,63 @@ def test_ghl_fetch_summary(monkeypatch):
         assert len(summary["leads"]) == 2
         assert summary["leads"][0]["title"] == "Jane Doe"
         assert summary["unread_texts"] >= 0
+
+
+def test_whoop_token_refresh(monkeypatch):
+    monkeypatch.setenv("WHOOP_CLIENT_ID", "cid")
+    monkeypatch.setenv("WHOOP_CLIENT_SECRET", "secret")
+    monkeypatch.setenv("WHOOP_REFRESH_TOKEN", "refresh")
+
+    mock_resp = MagicMock()
+    mock_resp.raise_for_status = MagicMock()
+    mock_resp.json.return_value = {
+        "access_token": "at_whoop",
+        "expires_in": 3600,
+        "refresh_token": "refresh_new",
+    }
+
+    with patch("httpx.post", return_value=mock_resp):
+        from brain.connectors.whoop_auth import get_access_token
+
+        token = get_access_token()
+        assert token == "at_whoop"
+
+
+def test_whoop_fetch_recovery(monkeypatch):
+    monkeypatch.setenv("WHOOP_CLIENT_ID", "cid")
+    monkeypatch.setenv("WHOOP_CLIENT_SECRET", "secret")
+    monkeypatch.setenv("WHOOP_REFRESH_TOKEN", "refresh")
+
+    token_resp = MagicMock()
+    token_resp.raise_for_status = MagicMock()
+    token_resp.json.return_value = {
+        "access_token": "at_whoop",
+        "expires_in": 3600,
+    }
+
+    recovery_resp = MagicMock()
+    recovery_resp.raise_for_status = MagicMock()
+    recovery_resp.json.return_value = {
+        "records": [
+            {
+                "score": {
+                    "recovery_score": 82,
+                    "hrv_rmssd_milli": 45.2,
+                    "resting_heart_rate": 52,
+                    "sleep": {"total_in_bed_time_milli": 28800000},
+                },
+                "strain": 12.5,
+            }
+        ]
+    }
+
+    with patch("httpx.post", return_value=token_resp), patch(
+        "httpx.get", return_value=recovery_resp
+    ):
+        data = whoop.fetch_recovery()
+        assert data["recovery_score"] == 82
+        assert data["hrv"] == 45.2
+        assert data["source"] == "whoop"
 
 
 def test_google_token_refresh(monkeypatch):
