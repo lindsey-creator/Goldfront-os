@@ -117,10 +117,6 @@ def main() -> None:
     }
     auth_url = "https://accounts.google.com/o/oauth2/v2/auth?" + urllib.parse.urlencode(params)
 
-    print("\nOpening browser for Google sign-in (lindsey@theconradteam.com)…")
-    print(f"If the browser does not open, visit:\n{auth_url}\n")
-    webbrowser.open(auth_url)
-
     captured: dict[str, str] = {}
 
     class Handler(BaseHTTPRequestHandler):
@@ -151,8 +147,14 @@ def main() -> None:
                 b"<p>You can close this tab and return to the terminal.</p></body></html>"
             )
 
+    # Bind the callback server BEFORE opening the browser so Google redirect
+    # never hits a closed port (ERR_CONNECTION_REFUSED).
     server = HTTPServer(("127.0.0.1", REDIRECT_PORT), Handler)
-    print(f"Waiting for OAuth callback on {REDIRECT_URI} …")
+    print(f"\nWaiting for OAuth callback on {REDIRECT_URI} …")
+    print("Keep this terminal open until sign-in completes.\n")
+    print("Opening browser for Google sign-in (lindsey@theconradteam.com)…")
+    print(f"If the browser does not open, visit:\n{auth_url}\n")
+    webbrowser.open(auth_url)
     server.handle_request()
 
     if captured.get("error"):
