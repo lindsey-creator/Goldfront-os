@@ -90,8 +90,23 @@ def _put(path: str, body: dict) -> Any:
 def _post(path: str, body: dict) -> Any:
     url = f"{API_BASE}{path}"
     resp = httpx.post(url, headers=_headers(), json=body, timeout=60.0)
-    resp.raise_for_status()
+    try:
+        resp.raise_for_status()
+    except httpx.HTTPStatusError as exc:
+        _raise_clickup_error(exc)
     return resp.json()
+
+
+_MENTION_RE = re.compile(r"\[@([^\]]+)\]\([^)]+\)")
+_CC_COMMENT_PREFIX = "Instructions from Command Center:\n"
+
+
+def _clean_clickup_text(text: str) -> str:
+    """Normalize ClickUp markdown mentions and command-center comment prefixes."""
+    cleaned = _MENTION_RE.sub(r"@\1", (text or "").strip())
+    if cleaned.startswith(_CC_COMMENT_PREFIX):
+        cleaned = cleaned[len(_CC_COMMENT_PREFIX) :].strip()
+    return cleaned
 
 
 def _default_list_id() -> str:
@@ -515,6 +530,89 @@ def fetch_task_comments(task_id: str) -> list[dict]:
     if not configured():
         raise ConnectorNotConfigured(CONNECTOR, ENV_VARS)
     return _get(f"/task/{task_id}/comment").get("comments", [])
+
+
+def list_task_comments(task_id: str) -> list[dict]:
+    """Recent comments on a task — alias used by task detail views."""
+    return fetch_task_comments(task_id)
+
+
+def _ms_to_iso(ms: Any) -> str | None:
+    if not ms:
+        return None
+    try:
+        return datetime.fromtimestamp(int(ms) / 1000, tz=timezone.utc).isoformat()
+    except (TypeError, ValueError, OSError):
+        return None
+
+
+def _ms_to_date(ms: Any) -> str | None:
+    if not ms:
+        return None
+    try:
+        return datetime.fromtimestamp(int(ms) / 1000, tz=timezone.utc).strftime(
+            "%Y-%m-%d"
+        )
+    except (TypeError, ValueError, OSError):
+        return None
+
+
+def _assignee_names(task: dict) -> list[str]:
+    names: list[str] = []
+    for assignee in task.get("assignees") or []:
+        label = (assignee.get("username") or assignee.get("email") or "").strip()
+        if label:
+            names.append(label)
+    return names
+
+
+def _format_comment(comment: dict) -> dict:
+    user = comment.get("user") or {}
+    author = (user.get("username") or user.get("email") or "Unknown").strip()
+    return {
+        "id": str(comment.get("id", "")),
+        "text": _clean_clickup_text(comment.get("comment_text") or ""),
+        "author": author or "Unknown",
+        "created_at": _ms_to_iso(comment.get("date")),
+    }
+
+
+def fetch_task_detail(task_id: str, *, comment_limit: int = 20) -> dict:
+    """Single task with description, metadata, and recent comments for Command Center."""
+    if not configured():
+        raise ConnectorNotConfigured(CONNECTOR, ENV_VARS)
+    task = fetch_task(task_id)
+    try:
+        comments_raw = list_task_comments(task_id)
+    except httpx.HTTPError:
+        comments_raw = []
+    comments = [
+        _format_comment(c)
+        for c in sorted(
+            comments_raw,
+            key=lambda row: int(row.get("date") or 0),
+            reverse=True,
+        )[:comment_limit]
+        if (c.get("comment_text") or "").strip()
+    ]
+    assignees = _assignee_names(task)
+    status_obj = task.get("status") or {}
+    ctx = _task_context(task)
+    space_label = ctx.get("space_name") or ctx.get("folder_name") or ""
+    return {
+        "id": str(task.get("id", "")),
+        "name": task.get("name") or "",
+        "description": _clean_clickup_text(_task_body_text(task)),
+        "status": status_obj.get("status") or "",
+        "status_type": (status_obj.get("type") or "").lower(),
+        "assignees": assignees,
+        "assignee": assignees[0] if assignees else "Unassigned",
+        "due_date": _ms_to_date(task.get("due_date")),
+        "url": task.get("url"),
+        "list_name": ctx.get("list_name") or "",
+        "space_name": space_label,
+        "comments": comments,
+    }
 
 
 def fetch_records() -> list[dict]:

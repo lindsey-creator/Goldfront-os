@@ -263,12 +263,34 @@ class ClickUpUnassignBody(BaseModel):
     member_id: str
 
 
+class ClickUpCommentBody(BaseModel):
+    text: str | None = None
+    comment: str | None = None
+
+    def resolved_text(self) -> str:
+        return (self.text or self.comment or "").strip()
+
+
 def _raise_clickup_http(exc: Exception) -> None:
     from brain.connectors.clickup import ClickUpAPIError
 
     if isinstance(exc, ClickUpAPIError):
         raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
     raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+
+@app.get("/clickup/tasks/{task_id}")
+def clickup_get_task(task_id: str):
+    """Fetch ClickUp task detail (description, status, assignees, comments)."""
+    if not clickup.configured():
+        return {"status": "connect_source", "sources": ["clickup"]}
+    try:
+        detail = clickup.fetch_task_detail(task_id)
+        return {"status": "ok", "task": detail}
+    except ConnectorNotConfigured:
+        return {"status": "connect_source", "sources": ["clickup"]}
+    except Exception as exc:
+        _raise_clickup_http(exc)
 
 
 @app.patch("/clickup/tasks/{task_id}")
@@ -369,6 +391,28 @@ def clickup_reopen_task(task_id: str):
         return {"status": "ok", "task": task}
     except ConnectorNotConfigured:
         return {"status": "connect_source", "sources": ["clickup"]}
+    except Exception as exc:
+        _raise_clickup_http(exc)
+
+
+@app.post("/clickup/tasks/{task_id}/comment")
+def clickup_add_task_comment(task_id: str, body: ClickUpCommentBody):
+    """Post instructions or notes as a ClickUp task comment."""
+    if not clickup.configured():
+        return {"status": "connect_source", "sources": ["clickup"]}
+    text = body.resolved_text()
+    if not text:
+        raise HTTPException(status_code=400, detail="comment text is required")
+    try:
+        comment = clickup.add_comment(
+            task_id,
+            f"Instructions from Command Center:\n{text}",
+        )
+        return {"status": "ok", "comment": comment}
+    except ConnectorNotConfigured:
+        return {"status": "connect_source", "sources": ["clickup"]}
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     except Exception as exc:
         _raise_clickup_http(exc)
 
