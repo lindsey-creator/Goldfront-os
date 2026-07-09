@@ -263,6 +263,14 @@ class ClickUpUnassignBody(BaseModel):
     member_id: str
 
 
+def _raise_clickup_http(exc: Exception) -> None:
+    from brain.connectors.clickup import ClickUpAPIError
+
+    if isinstance(exc, ClickUpAPIError):
+        raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
+    raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+
 @app.patch("/clickup/tasks/{task_id}")
 def clickup_update_task(task_id: str, body: ClickUpTaskPatch):
     """Update a ClickUp task (status and/or name)."""
@@ -280,7 +288,7 @@ def clickup_update_task(task_id: str, body: ClickUpTaskPatch):
     except ConnectorNotConfigured:
         return {"status": "connect_source", "sources": ["clickup"]}
     except Exception as exc:
-        raise HTTPException(status_code=502, detail=str(exc)) from exc
+        _raise_clickup_http(exc)
 
 
 @app.post("/clickup/tasks/{task_id}/complete")
@@ -294,7 +302,7 @@ def clickup_complete_task(task_id: str):
     except ConnectorNotConfigured:
         return {"status": "connect_source", "sources": ["clickup"]}
     except Exception as exc:
-        raise HTTPException(status_code=502, detail=str(exc)) from exc
+        _raise_clickup_http(exc)
 
 
 @app.get("/clickup/members")
@@ -308,7 +316,7 @@ def clickup_members():
     except ConnectorNotConfigured:
         return {"status": "connect_source", "sources": ["clickup"], "members": []}
     except Exception as exc:
-        raise HTTPException(status_code=502, detail=str(exc)) from exc
+        _raise_clickup_http(exc)
 
 
 @app.post("/clickup/tasks/{task_id}/assign")
@@ -334,7 +342,7 @@ def clickup_assign_task(task_id: str, body: ClickUpAssignBody):
     except ConnectorNotConfigured:
         return {"status": "connect_source", "sources": ["clickup"]}
     except Exception as exc:
-        raise HTTPException(status_code=502, detail=str(exc)) from exc
+        _raise_clickup_http(exc)
 
 
 @app.post("/clickup/tasks/{task_id}/unassign")
@@ -348,7 +356,7 @@ def clickup_unassign_task(task_id: str, body: ClickUpUnassignBody):
     except ConnectorNotConfigured:
         return {"status": "connect_source", "sources": ["clickup"]}
     except Exception as exc:
-        raise HTTPException(status_code=502, detail=str(exc)) from exc
+        _raise_clickup_http(exc)
 
 
 @app.post("/clickup/tasks/{task_id}/reopen")
@@ -362,7 +370,7 @@ def clickup_reopen_task(task_id: str):
     except ConnectorNotConfigured:
         return {"status": "connect_source", "sources": ["clickup"]}
     except Exception as exc:
-        raise HTTPException(status_code=502, detail=str(exc)) from exc
+        _raise_clickup_http(exc)
 
 
 # -- Ask the room (reasoning agent, master spec §5.3–5.4) -------------------

@@ -18,6 +18,15 @@ from brain.connectors.clickup_routing import (
 API_BASE = "https://api.clickup.com/api/v2"
 CONNECTOR = "clickup"
 ENV_VARS = ["CLICKUP_API_TOKEN", "CLICKUP_WORKSPACE_ID"]
+
+
+class ClickUpAPIError(Exception):
+    """ClickUp HTTP error with a client-safe status code for Brain API responses."""
+
+    def __init__(self, message: str, *, status_code: int = 502, detail: str | None = None):
+        self.status_code = status_code
+        self.detail = detail or message
+        super().__init__(message)
 MAX_TASK_PAGES = 20
 MAX_COMMENT_TASKS = 150
 TRANSCRIPT_CF_NAMES = ("summary", "transcript", "meeting notes", "brief", "recording notes")
@@ -56,10 +65,25 @@ def _get(path: str, params: dict | None = None) -> Any:
     return resp.json()
 
 
+def _raise_clickup_error(exc: httpx.HTTPStatusError) -> None:
+    code = exc.response.status_code
+    text = (exc.response.text or "").strip()
+    detail = text[:500] if text else str(exc)
+    client_code = 400 if 400 <= code < 500 else 502
+    raise ClickUpAPIError(
+        f"ClickUp API {code}: {detail}",
+        status_code=client_code,
+        detail=detail,
+    ) from exc
+
+
 def _put(path: str, body: dict) -> Any:
     url = f"{API_BASE}{path}"
     resp = httpx.put(url, headers=_headers(), json=body, timeout=60.0)
-    resp.raise_for_status()
+    try:
+        resp.raise_for_status()
+    except httpx.HTTPStatusError as exc:
+        _raise_clickup_error(exc)
     return resp.json()
 
 
@@ -115,7 +139,7 @@ def create_task(text: str, assignee_hint: str | None = None) -> dict:
     }
 
 
-# Common ClickUp status aliases → canonical names we try when list metadata is unavailable.
+# User-facing aliases for PATCH /clickup/tasks when list metadata is unavailable.
 _STATUS_ALIASES: dict[str, str] = {
     "open": "open",
     "to do": "open",
@@ -129,10 +153,18 @@ _STATUS_ALIASES: dict[str, str] = {
     "done": "done",
 }
 
+_OPEN_STATUS_HINTS = frozenset({"open", "to do", "todo"})
+_CLOSED_STATUS_HINTS = frozenset({"complete", "completed", "closed", "done"})
+
 
 def _normalize_status_name(status: str) -> str:
     key = status.strip().lower()
     return _STATUS_ALIASES.get(key, status.strip())
+
+
+def _status_name_matches_hint(status_name: str, hints: frozenset[str]) -> bool:
+    key = status_name.strip().lower()
+    return key in hints or _normalize_status_name(status_name).lower() in hints
 
 
 def fetch_task(task_id: str) -> dict:
@@ -162,12 +194,27 @@ def _status_by_type(task: dict, status_type: str) -> str | None:
     return None
 
 
+def _status_by_hint(task: dict, hints: frozenset[str]) -> str | None:
+    list_id = (task.get("list") or {}).get("id")
+    if not list_id:
+        return None
+    try:
+        for st in _list_statuses(str(list_id)):
+            name = st.get("status")
+            if name and _status_name_matches_hint(str(name), hints):
+                return str(name)
+    except httpx.HTTPError:
+        return None
+    return None
+
+
 def _resolve_complete_status(task: dict) -> str:
     closed = _status_by_type(task, "closed")
     if closed:
         return closed
-    for name in ("complete", "closed", "done"):
-        return name
+    hinted = _status_by_hint(task, _CLOSED_STATUS_HINTS)
+    if hinted:
+        return hinted
     return "complete"
 
 
@@ -175,9 +222,15 @@ def _resolve_open_status(task: dict) -> str:
     open_status = _status_by_type(task, "open")
     if open_status:
         return open_status
-    for name in ("open", "to do", "todo"):
-        return name
+    hinted = _status_by_hint(task, _OPEN_STATUS_HINTS)
+    if hinted:
+        return hinted
     return "open"
+
+
+def _set_task_status(task_id: str, status: str) -> dict:
+    """PUT exact status name as defined on the task's list (no alias normalization)."""
+    return _put(f"/task/{task_id}", {"status": status})
 
 
 def update_task_status(task_id: str, status: str) -> dict:
@@ -185,7 +238,7 @@ def update_task_status(task_id: str, status: str) -> dict:
     if not configured():
         raise ConnectorNotConfigured(CONNECTOR, ENV_VARS)
     normalized = _normalize_status_name(status)
-    return _put(f"/task/{task_id}", {"status": normalized})
+    return _set_task_status(task_id, normalized)
 
 
 def complete_task(task_id: str) -> dict:
@@ -194,7 +247,7 @@ def complete_task(task_id: str) -> dict:
         raise ConnectorNotConfigured(CONNECTOR, ENV_VARS)
     task = fetch_task(task_id)
     status = _resolve_complete_status(task)
-    return update_task_status(task_id, status)
+    return _set_task_status(task_id, status)
 
 
 def reopen_task(task_id: str) -> dict:
@@ -203,7 +256,7 @@ def reopen_task(task_id: str) -> dict:
         raise ConnectorNotConfigured(CONNECTOR, ENV_VARS)
     task = fetch_task(task_id)
     status = _resolve_open_status(task)
-    return update_task_status(task_id, status)
+    return _set_task_status(task_id, status)
 
 
 def _initials_for_user(user: dict) -> str:
