@@ -113,7 +113,10 @@ def test_add_comment_posts_text(clickup_configured, monkeypatch):
     assert captured["body"] == {"comment_text": "Done from Command Center"}
 
 
-def test_not_configured_raises():
+def test_not_configured_raises(monkeypatch):
+    monkeypatch.delenv("CLICKUP_API_TOKEN", raising=False)
+    monkeypatch.delenv("CLICKUP_WORKSPACE_ID", raising=False)
+    monkeypatch.setattr(clickup, "configured", lambda: False)
     with pytest.raises(ConnectorNotConfigured):
         clickup.update_task_status("1", "open")
 
