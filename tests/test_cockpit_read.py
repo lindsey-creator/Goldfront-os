@@ -121,11 +121,17 @@ def test_cockpit_http_endpoints_return_200(kb, no_connectors, monkeypatch):
         "/health/metrics",
         "/crm/ghl",
         "/calendar/week",
+        "/ads/meta",
+        "/weather",
+        "/audio/recent",
+        "/approvals/pending",
     ]
     for path in paths:
         resp = client.get(path)
         assert resp.status_code == 200, path
         body = resp.json()
         if "connectors" in body:
+            continue
+        if "items" in body and "status" not in body:
             continue
         assert body.get("status") in ("connect_source", "partial", "ok")

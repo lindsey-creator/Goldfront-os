@@ -37,7 +37,7 @@ def clear_connector_env(monkeypatch):
 def test_connectors_status_all_disconnected():
     s = connectors_status()
     assert s["connected_count"] == 0
-    assert s["total"] == 7
+    assert s["total"] == 9
     assert s["connectors"]["clickup"]["connected"] is False
     assert "CLICKUP_API_TOKEN" in s["connectors"]["clickup"]["env_vars"]
     # Never expose secret values

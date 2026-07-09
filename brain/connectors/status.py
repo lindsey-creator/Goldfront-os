@@ -4,7 +4,17 @@ from __future__ import annotations
 
 import os
 
-from brain.connectors import apple_health, clickup, fieldy, gcal, ghl, gmail, whoop
+from brain.connectors import (
+    apple_health,
+    clickup,
+    fieldy,
+    gcal,
+    ghl,
+    gmail,
+    meta,
+    weather,
+    whoop,
+)
 
 GHL_TEAM_LOCATION_ID = "FFdZCVGXSQQThtHZEOYx"
 
@@ -18,6 +28,8 @@ def connectors_status() -> dict:
         ("ghl", ghl.ENV_VARS, ghl.configured()),
         ("whoop", whoop.ENV_VARS, whoop.configured()),
         ("apple_health", apple_health.ENV_VARS, apple_health.configured()),
+        ("meta", meta.ENV_VARS, meta.configured()),
+        ("weather", weather.ENV_VARS, weather.configured()),
     ]
     connectors = {}
     for name, env_vars, connected in entries:

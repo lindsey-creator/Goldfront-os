@@ -9,7 +9,17 @@ from __future__ import annotations
 
 from datetime import date, timedelta
 
-from brain.connectors import apple_health, clickup, fieldy, gcal, ghl, gmail, whoop
+from brain.connectors import (
+    apple_health,
+    clickup,
+    fieldy,
+    gcal,
+    ghl,
+    gmail,
+    meta,
+    weather,
+    whoop,
+)
 from brain.connectors.base import ConnectorNotConfigured, section_needs, section_ok
 from brain.connectors.clickup_sync import maybe_sync
 from brain.memory.knowledge_base import KnowledgeBase
@@ -152,6 +162,7 @@ class CockpitRead:
                         "title": t["task"],
                         "detail": f"{t['person']} · {t['days_late']}d late",
                         "source": "clickup",
+                        "clickup_task_id": t.get("clickup_task_id"),
                     }
                 )
                 accountability_items.append(
@@ -457,6 +468,7 @@ class CockpitRead:
                         "title": t["task"],
                         "detail": f"{t['person']} · {t['days_late']}d overdue",
                         "source": "clickup",
+                        "clickup_task_id": t.get("clickup_task_id"),
                     }
                 )
 
@@ -558,6 +570,7 @@ class CockpitRead:
                             "committed": item.get("detail") or item.get("title", ""),
                             "actual": "flagged from Fieldy in ClickUp",
                             "suggested_move": "Close the loop",
+                            "clickup_task_id": item.get("clickup_task_id"),
                         }
                     )
             except Exception:
@@ -649,6 +662,32 @@ class CockpitRead:
                 "note": "No transcripts in the last 7 days.",
             }
         return _needs("fieldy")
+
+    def meta_ads(self) -> dict:
+        if not meta.configured():
+            return _needs("meta")
+        try:
+            data = meta.fetch_ads_summary()
+            return {
+                "status": "ok",
+                "sources": ["meta"],
+                **data,
+            }
+        except Exception:
+            return _needs("meta")
+
+    def weather(self) -> dict:
+        if not weather.configured():
+            return _needs("weather")
+        try:
+            data = weather.fetch_cleveland()
+            return {
+                "status": "ok",
+                "sources": ["weather"],
+                **data,
+            }
+        except Exception:
+            return _needs("weather")
 
     def counts(self) -> dict:
         return {

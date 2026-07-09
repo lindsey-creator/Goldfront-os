@@ -56,6 +56,185 @@ def _get(path: str, params: dict | None = None) -> Any:
     return resp.json()
 
 
+def _put(path: str, body: dict) -> Any:
+    url = f"{API_BASE}{path}"
+    resp = httpx.put(url, headers=_headers(), json=body, timeout=60.0)
+    resp.raise_for_status()
+    return resp.json()
+
+
+def _post(path: str, body: dict) -> Any:
+    url = f"{API_BASE}{path}"
+    resp = httpx.post(url, headers=_headers(), json=body, timeout=60.0)
+    resp.raise_for_status()
+    return resp.json()
+
+
+def _default_list_id() -> str:
+    import os
+
+    explicit = os.getenv("CLICKUP_DEFAULT_LIST_ID", "").strip()
+    if explicit:
+        return explicit
+    team = _team_id()
+    spaces = _get(f"/team/{team}/space", {"archived": "false"})
+    for space in spaces.get("spaces", []):
+        for folder in space.get("folders", []) or []:
+            for lst in folder.get("lists", []) or []:
+                if lst.get("id"):
+                    return str(lst["id"])
+        for lst in space.get("lists", []) or []:
+            if lst.get("id"):
+                return str(lst["id"])
+    raise ConnectorNotConfigured(
+        CONNECTOR,
+        [*ENV_VARS, "CLICKUP_DEFAULT_LIST_ID"],
+    )
+
+
+def create_task(text: str, assignee_hint: str | None = None) -> dict:
+    """Create a ClickUp task — only called after human approval."""
+    if not configured():
+        raise ConnectorNotConfigured(CONNECTOR, ENV_VARS)
+    list_id = _default_list_id()
+    lines = text.strip().split("\n", 1)
+    name = lines[0][:250] or "Task from Command Center"
+    description = lines[1] if len(lines) > 1 else text
+    if assignee_hint:
+        description = f"Route to: {assignee_hint}\n\n{description}".strip()
+    payload = {
+        "name": name,
+        "description": description,
+        "tags": ["echo-command"],
+    }
+    created = _post(f"/list/{list_id}/task", payload)
+    return {
+        "id": created.get("id"),
+        "url": created.get("url"),
+        "name": created.get("name"),
+    }
+
+
+# Common ClickUp status aliases → canonical names we try when list metadata is unavailable.
+_STATUS_ALIASES: dict[str, str] = {
+    "open": "open",
+    "to do": "open",
+    "todo": "open",
+    "in progress": "in progress",
+    "in_progress": "in progress",
+    "working": "in progress",
+    "complete": "complete",
+    "completed": "complete",
+    "closed": "closed",
+    "done": "done",
+}
+
+
+def _normalize_status_name(status: str) -> str:
+    key = status.strip().lower()
+    return _STATUS_ALIASES.get(key, status.strip())
+
+
+def fetch_task(task_id: str) -> dict:
+    """Fetch a single task by id."""
+    if not configured():
+        raise ConnectorNotConfigured(CONNECTOR, ENV_VARS)
+    return _get(f"/task/{task_id}")
+
+
+def _list_statuses(list_id: str) -> list[dict]:
+    data = _get(f"/list/{list_id}")
+    return data.get("statuses") or []
+
+
+def _status_by_type(task: dict, status_type: str) -> str | None:
+    list_id = (task.get("list") or {}).get("id")
+    if not list_id:
+        return None
+    try:
+        for st in _list_statuses(str(list_id)):
+            if (st.get("type") or "").lower() == status_type:
+                name = st.get("status")
+                if name:
+                    return str(name)
+    except httpx.HTTPError:
+        return None
+    return None
+
+
+def _resolve_complete_status(task: dict) -> str:
+    closed = _status_by_type(task, "closed")
+    if closed:
+        return closed
+    for name in ("complete", "closed", "done"):
+        return name
+    return "complete"
+
+
+def _resolve_open_status(task: dict) -> str:
+    open_status = _status_by_type(task, "open")
+    if open_status:
+        return open_status
+    for name in ("open", "to do", "todo"):
+        return name
+    return "open"
+
+
+def update_task_status(task_id: str, status: str) -> dict:
+    """Set task status via ClickUp PUT /task/{id}."""
+    if not configured():
+        raise ConnectorNotConfigured(CONNECTOR, ENV_VARS)
+    normalized = _normalize_status_name(status)
+    return _put(f"/task/{task_id}", {"status": normalized})
+
+
+def complete_task(task_id: str) -> dict:
+    """Mark task complete/closed using the list's closed status when possible."""
+    if not configured():
+        raise ConnectorNotConfigured(CONNECTOR, ENV_VARS)
+    task = fetch_task(task_id)
+    status = _resolve_complete_status(task)
+    return update_task_status(task_id, status)
+
+
+def reopen_task(task_id: str) -> dict:
+    """Reopen a task using the list's open status when possible."""
+    if not configured():
+        raise ConnectorNotConfigured(CONNECTOR, ENV_VARS)
+    task = fetch_task(task_id)
+    status = _resolve_open_status(task)
+    return update_task_status(task_id, status)
+
+
+def update_task(
+    task_id: str,
+    *,
+    status: str | None = None,
+    name: str | None = None,
+) -> dict:
+    """Patch task fields supported by ClickUp (status, name)."""
+    if not configured():
+        raise ConnectorNotConfigured(CONNECTOR, ENV_VARS)
+    body: dict[str, str] = {}
+    if status is not None:
+        body["status"] = _normalize_status_name(status)
+    if name is not None:
+        body["name"] = name.strip()
+    if not body:
+        return fetch_task(task_id)
+    return _put(f"/task/{task_id}", body)
+
+
+def add_comment(task_id: str, text: str) -> dict:
+    """Add a comment to a task."""
+    if not configured():
+        raise ConnectorNotConfigured(CONNECTOR, ENV_VARS)
+    comment = (text or "").strip()
+    if not comment:
+        raise ValueError("comment text is required")
+    return _post(f"/task/{task_id}/comment", {"comment_text": comment})
+
+
 def _task_context(task: dict) -> dict[str, str]:
     lst = task.get("list") or {}
     folder = task.get("folder") or {}
@@ -339,6 +518,7 @@ def fetch_fieldy_flagged_tasks(limit: int = 10) -> list[dict]:
                 "date": _parse_task_date(task),
                 "source": "clickup",
                 "url": task.get("url"),
+                "clickup_task_id": str(task.get("id", "")),
             }
         )
     items.sort(key=lambda x: x.get("date") or "", reverse=True)
@@ -399,6 +579,7 @@ def overdue_tasks() -> list[dict]:
                 "task": task.get("name", ""),
                 "due": due.strftime("%Y-%m-%d"),
                 "days_late": days_late,
+                "clickup_task_id": str(task.get("id", "")),
             }
         )
     return sorted(overdue, key=lambda x: -x["days_late"])
@@ -434,6 +615,7 @@ def open_tasks(limit: int = 10) -> list[dict]:
                 "title": task.get("name", ""),
                 "detail": f"{person} · due {due_str}",
                 "source": "clickup",
+                "clickup_task_id": str(task.get("id", "")),
                 "_sort": sort_key,
             }
         )

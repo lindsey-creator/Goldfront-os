@@ -19,14 +19,16 @@ load_dotenv()
 
 from pathlib import Path
 
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from brain.agent import reasoning
+from brain.approvals import queue as approval_queue
 from brain.cockpit.read import CockpitRead
+from brain.connectors.base import ConnectorNotConfigured
 from brain.connectors import clickup, fieldy
 from brain.connectors.clickup_sync import last_sync_result, maybe_sync
 from brain.connectors.status import connectors_status
@@ -165,6 +167,61 @@ def audio_recent(limit: int = 12):
     return _cockpit.audio_recent(limit=limit)
 
 
+@app.get("/ads/meta")
+def ads_meta():
+    return _cockpit.meta_ads()
+
+
+@app.get("/weather")
+def weather_cleveland():
+    return _cockpit.weather()
+
+
+class TaskRequest(BaseModel):
+    text: str
+    assignee_hint: str | None = None
+    source: str | None = None
+
+
+@app.post("/tasks")
+def issue_task(req: TaskRequest):
+    """Issue a task — queued for human approval before ClickUp (§3.3)."""
+    if not clickup.configured():
+        return {"status": "connect_source", "sources": ["clickup"]}
+    aid = approval_queue.enqueue(
+        "task",
+        req.text.strip(),
+        {"assignee_hint": req.assignee_hint, "source": req.source},
+    )
+    return {
+        "status": "pending_approval",
+        "approval_id": aid,
+        "requires_approval": True,
+        "routed_to": req.assignee_hint,
+        "note": "Approve from the Command Center to create in ClickUp.",
+    }
+
+
+class ApprovalAction(BaseModel):
+    text: str | None = None
+
+
+@app.get("/approvals/pending")
+def approvals_pending():
+    return {"items": approval_queue.pending()}
+
+
+@app.post("/approvals/{approval_id}/approve")
+def approvals_approve(approval_id: str, body: ApprovalAction | None = None):
+    text = body.text if body else None
+    return approval_queue.approve(approval_id, content=text)
+
+
+@app.post("/approvals/{approval_id}/deny")
+def approvals_deny(approval_id: str):
+    return approval_queue.deny(approval_id)
+
+
 @app.get("/ingest/clickup/status")
 def ingest_clickup_status():
     return last_sync_result()
@@ -185,6 +242,60 @@ def ingest_fieldy(days_back: int = 1):
     return fieldy.ingest_live(days_back=days_back)
 
 
+# -- ClickUp task mutations (writes — separate from cockpit reads) ------------
+class ClickUpTaskPatch(BaseModel):
+    status: str | None = None
+    name: str | None = None
+
+
+@app.patch("/clickup/tasks/{task_id}")
+def clickup_update_task(task_id: str, body: ClickUpTaskPatch):
+    """Update a ClickUp task (status and/or name)."""
+    if not clickup.configured():
+        return {"status": "connect_source", "sources": ["clickup"]}
+    if body.status is None and body.name is None:
+        raise HTTPException(status_code=400, detail="Provide status and/or name")
+    try:
+        task = clickup.update_task(
+            task_id,
+            status=body.status,
+            name=body.name,
+        )
+        return {"status": "ok", "task": task}
+    except ConnectorNotConfigured:
+        return {"status": "connect_source", "sources": ["clickup"]}
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+
+@app.post("/clickup/tasks/{task_id}/complete")
+def clickup_complete_task(task_id: str):
+    """Quick-complete a ClickUp task."""
+    if not clickup.configured():
+        return {"status": "connect_source", "sources": ["clickup"]}
+    try:
+        task = clickup.complete_task(task_id)
+        return {"status": "ok", "task": task}
+    except ConnectorNotConfigured:
+        return {"status": "connect_source", "sources": ["clickup"]}
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+
+@app.post("/clickup/tasks/{task_id}/reopen")
+def clickup_reopen_task(task_id: str):
+    """Reopen a ClickUp task."""
+    if not clickup.configured():
+        return {"status": "connect_source", "sources": ["clickup"]}
+    try:
+        task = clickup.reopen_task(task_id)
+        return {"status": "ok", "task": task}
+    except ConnectorNotConfigured:
+        return {"status": "connect_source", "sources": ["clickup"]}
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+
 # -- Ask the room (reasoning agent, master spec §5.3–5.4) -------------------
 class ChatRequest(BaseModel):
     message: str
@@ -202,9 +313,15 @@ def chat(req: ChatRequest):
     engine = None
     if req.deal is not None:
         engine = evaluate_deal(DealInputs(**req.deal.model_dump()))
-    return reasoning.answer(
+    result = reasoning.answer(
         req.message, kb=KnowledgeBase(), engine=engine, wants_draft=req.wants_draft
     )
+    draft = result.get("draft")
+    if draft:
+        aid = approval_queue.enqueue("draft", draft, {"message": req.message})
+        result["approval_id"] = aid
+        result["requires_approval"] = True
+    return result
 
 
 # -- Command Center UI (production: single-port web app) --------------------
