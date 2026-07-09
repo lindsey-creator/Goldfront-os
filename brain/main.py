@@ -26,6 +26,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from brain.agent import reasoning
+from brain.agent.chat_actions import try_chat_action
 from brain.approvals import queue as approval_queue
 from brain.cockpit.read import CockpitRead
 from brain.connectors.base import ConnectorNotConfigured
@@ -248,6 +249,10 @@ class ClickUpTaskPatch(BaseModel):
     name: str | None = None
 
 
+class ClickUpAssignBody(BaseModel):
+    member_id: str
+
+
 @app.patch("/clickup/tasks/{task_id}")
 def clickup_update_task(task_id: str, body: ClickUpTaskPatch):
     """Update a ClickUp task (status and/or name)."""
@@ -275,6 +280,34 @@ def clickup_complete_task(task_id: str):
         return {"status": "connect_source", "sources": ["clickup"]}
     try:
         task = clickup.complete_task(task_id)
+        return {"status": "ok", "task": task}
+    except ConnectorNotConfigured:
+        return {"status": "connect_source", "sources": ["clickup"]}
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+
+@app.get("/clickup/members")
+def clickup_members():
+    """Workspace members for Quick Assign in Command Center."""
+    if not clickup.configured():
+        return {"status": "connect_source", "sources": ["clickup"], "members": []}
+    try:
+        members = clickup.fetch_team_members()
+        return {"status": "ok", "members": members}
+    except ConnectorNotConfigured:
+        return {"status": "connect_source", "sources": ["clickup"], "members": []}
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+
+@app.post("/clickup/tasks/{task_id}/assign")
+def clickup_assign_task(task_id: str, body: ClickUpAssignBody):
+    """Assign a workspace member to a ClickUp task."""
+    if not clickup.configured():
+        return {"status": "connect_source", "sources": ["clickup"]}
+    try:
+        task = clickup.assign_task(task_id, body.member_id)
         return {"status": "ok", "task": task}
     except ConnectorNotConfigured:
         return {"status": "connect_source", "sources": ["clickup"]}
@@ -310,6 +343,10 @@ def chat(req: ChatRequest):
     engine runs first and the agent narrates those numbers (never computes them).
     Any draft comes back flagged requires_approval — nothing sends on its own.
     """
+    action = try_chat_action(req.message)
+    if action is not None:
+        return action
+
     engine = None
     if req.deal is not None:
         engine = evaluate_deal(DealInputs(**req.deal.model_dump()))

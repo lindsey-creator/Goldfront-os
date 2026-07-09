@@ -59,12 +59,19 @@ def fetch_crm_summary() -> dict:
         phone = (c.get("phone") or c.get("phoneNumber") or "").strip()
         email = (c.get("email") or "").strip()
         date_added = (c.get("dateAdded") or c.get("date_added") or "")[:10]
+        contact_id = str(c.get("id") or "")
         leads.append(
             {
                 "title": name,
                 "detail": phone or email or "No phone on file",
                 "date": date_added,
                 "source": "ghl",
+                "ghl_contact_id": contact_id,
+                "ghl_url": (
+                    f"https://app.gohighlevel.com/v2/location/{loc}/contacts/detail/{contact_id}"
+                    if contact_id
+                    else None
+                ),
             }
         )
 

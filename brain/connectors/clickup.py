@@ -206,6 +206,63 @@ def reopen_task(task_id: str) -> dict:
     return update_task_status(task_id, status)
 
 
+def fetch_team_members() -> list[dict]:
+    """Workspace members for assign UI — {id, username, email, name}."""
+    if not configured():
+        raise ConnectorNotConfigured(CONNECTOR, ENV_VARS)
+    team_id = _team_id()
+    data = _get("/team")
+    members: list[dict] = []
+    for team in data.get("teams", []):
+        if str(team.get("id")) != str(team_id):
+            continue
+        for member in team.get("members", []):
+            user = member.get("user") or {}
+            uid = user.get("id")
+            if not uid:
+                continue
+            username = (user.get("username") or "").strip()
+            email = (user.get("email") or "").strip()
+            members.append(
+                {
+                    "id": str(uid),
+                    "username": username,
+                    "email": email,
+                    "name": username or email or "Unknown",
+                }
+            )
+        break
+    if not members:
+        for team in data.get("teams", []):
+            for member in team.get("members", []):
+                user = member.get("user") or {}
+                uid = user.get("id")
+                if not uid:
+                    continue
+                username = (user.get("username") or "").strip()
+                email = (user.get("email") or "").strip()
+                members.append(
+                    {
+                        "id": str(uid),
+                        "username": username,
+                        "email": email,
+                        "name": username or email or "Unknown",
+                    }
+                )
+            if members:
+                break
+    members.sort(key=lambda m: (m.get("name") or "").lower())
+    return members
+
+
+def assign_task(task_id: str, member_id: str | int) -> dict:
+    """Assign a workspace member to a task (adds to existing assignees)."""
+    if not configured():
+        raise ConnectorNotConfigured(CONNECTOR, ENV_VARS)
+    uid = int(member_id)
+    return _put(f"/task/{task_id}", {"assignees": {"add": [uid], "rem": []}})
+
+
 def update_task(
     task_id: str,
     *,

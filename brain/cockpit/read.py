@@ -171,6 +171,7 @@ class CockpitRead:
                         "committed": t["task"],
                         "actual": "overdue",
                         "suggested_move": f"Follow up — due {t['due']}",
+                        "clickup_task_id": t.get("clickup_task_id"),
                     }
                 )
 
