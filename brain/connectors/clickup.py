@@ -206,8 +206,37 @@ def reopen_task(task_id: str) -> dict:
     return update_task_status(task_id, status)
 
 
+def _initials_for_user(user: dict) -> str:
+    explicit = (user.get("initials") or "").strip()
+    if explicit:
+        return explicit[:3].upper()
+    username = (user.get("username") or "").strip()
+    if username:
+        parts = [p for p in username.replace(".", " ").split() if p]
+        if len(parts) >= 2:
+            return f"{parts[0][0]}{parts[1][0]}".upper()
+        return username[:2].upper()
+    email = (user.get("email") or "").strip()
+    if email:
+        local = email.split("@", 1)[0]
+        return local[:2].upper()
+    return "??"
+
+
+def _member_record(user: dict) -> dict:
+    username = (user.get("username") or "").strip()
+    email = (user.get("email") or "").strip()
+    return {
+        "id": str(user["id"]),
+        "username": username,
+        "email": email,
+        "initials": _initials_for_user(user),
+        "name": username or email or "Unknown",
+    }
+
+
 def fetch_team_members() -> list[dict]:
-    """Workspace members for assign UI — {id, username, email, name}."""
+    """Workspace members for assign UI — {id, username, email, initials, name}."""
     if not configured():
         raise ConnectorNotConfigured(CONNECTOR, ENV_VARS)
     team_id = _team_id()
@@ -221,16 +250,7 @@ def fetch_team_members() -> list[dict]:
             uid = user.get("id")
             if not uid:
                 continue
-            username = (user.get("username") or "").strip()
-            email = (user.get("email") or "").strip()
-            members.append(
-                {
-                    "id": str(uid),
-                    "username": username,
-                    "email": email,
-                    "name": username or email or "Unknown",
-                }
-            )
+            members.append(_member_record(user))
         break
     if not members:
         for team in data.get("teams", []):
@@ -239,28 +259,46 @@ def fetch_team_members() -> list[dict]:
                 uid = user.get("id")
                 if not uid:
                     continue
-                username = (user.get("username") or "").strip()
-                email = (user.get("email") or "").strip()
-                members.append(
-                    {
-                        "id": str(uid),
-                        "username": username,
-                        "email": email,
-                        "name": username or email or "Unknown",
-                    }
-                )
+                members.append(_member_record(user))
             if members:
                 break
     members.sort(key=lambda m: (m.get("name") or "").lower())
     return members
 
 
-def assign_task(task_id: str, member_id: str | int) -> dict:
-    """Assign a workspace member to a task (adds to existing assignees)."""
+def assign_task(
+    task_id: str,
+    assignee_ids: list[int] | int | str,
+    *,
+    note: str | None = None,
+    assignee_name: str | None = None,
+) -> dict:
+    """Assign workspace member(s) to a task (adds to existing assignees)."""
     if not configured():
         raise ConnectorNotConfigured(CONNECTOR, ENV_VARS)
-    uid = int(member_id)
-    return _put(f"/task/{task_id}", {"assignees": {"add": [uid], "rem": []}})
+    if isinstance(assignee_ids, (int, str)):
+        ids = [int(assignee_ids)]
+    else:
+        ids = [int(uid) for uid in assignee_ids]
+    task = _put(f"/task/{task_id}", {"assignees": {"add": ids, "rem": []}})
+    if note:
+        label = assignee_name or "team member"
+        add_comment(
+            task_id,
+            f"Reassigned via Echo Command to {label}: {note}",
+        )
+    return task
+
+
+def unassign_task(task_id: str, assignee_ids: list[int] | int | str) -> dict:
+    """Remove workspace member(s) from a task."""
+    if not configured():
+        raise ConnectorNotConfigured(CONNECTOR, ENV_VARS)
+    if isinstance(assignee_ids, (int, str)):
+        ids = [int(assignee_ids)]
+    else:
+        ids = [int(uid) for uid in assignee_ids]
+    return _put(f"/task/{task_id}", {"assignees": {"add": [], "rem": ids}})
 
 
 def update_task(
@@ -633,6 +671,7 @@ def overdue_tasks() -> list[dict]:
         overdue.append(
             {
                 "person": person,
+                "assignee": person,
                 "task": task.get("name", ""),
                 "due": due.strftime("%Y-%m-%d"),
                 "days_late": days_late,
@@ -671,6 +710,7 @@ def open_tasks(limit: int = 10) -> list[dict]:
             {
                 "title": task.get("name", ""),
                 "detail": f"{person} · due {due_str}",
+                "assignee": person,
                 "source": "clickup",
                 "clickup_task_id": str(task.get("id", "")),
                 "_sort": sort_key,

@@ -251,6 +251,16 @@ class ClickUpTaskPatch(BaseModel):
 
 class ClickUpAssignBody(BaseModel):
     member_id: str
+    note: str | None = None
+    comment: str | None = None
+
+    def resolved_note(self) -> str | None:
+        text = (self.note or self.comment or "").strip()
+        return text or None
+
+
+class ClickUpUnassignBody(BaseModel):
+    member_id: str
 
 
 @app.patch("/clickup/tasks/{task_id}")
@@ -307,7 +317,33 @@ def clickup_assign_task(task_id: str, body: ClickUpAssignBody):
     if not clickup.configured():
         return {"status": "connect_source", "sources": ["clickup"]}
     try:
-        task = clickup.assign_task(task_id, body.member_id)
+        assignee_name: str | None = None
+        note = body.resolved_note()
+        if note:
+            for member in clickup.fetch_team_members():
+                if str(member.get("id")) == str(body.member_id):
+                    assignee_name = member.get("name") or member.get("username")
+                    break
+        task = clickup.assign_task(
+            task_id,
+            body.member_id,
+            note=note,
+            assignee_name=assignee_name,
+        )
+        return {"status": "ok", "task": task}
+    except ConnectorNotConfigured:
+        return {"status": "connect_source", "sources": ["clickup"]}
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+
+@app.post("/clickup/tasks/{task_id}/unassign")
+def clickup_unassign_task(task_id: str, body: ClickUpUnassignBody):
+    """Remove a workspace member from a ClickUp task."""
+    if not clickup.configured():
+        return {"status": "connect_source", "sources": ["clickup"]}
+    try:
+        task = clickup.unassign_task(task_id, body.member_id)
         return {"status": "ok", "task": task}
     except ConnectorNotConfigured:
         return {"status": "connect_source", "sources": ["clickup"]}

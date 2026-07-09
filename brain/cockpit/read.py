@@ -161,6 +161,7 @@ class CockpitRead:
                     {
                         "title": t["task"],
                         "detail": f"{t['person']} · {t['days_late']}d late",
+                        "assignee": t.get("assignee") or t.get("person"),
                         "source": "clickup",
                         "clickup_task_id": t.get("clickup_task_id"),
                     }
@@ -468,6 +469,7 @@ class CockpitRead:
                     {
                         "title": t["task"],
                         "detail": f"{t['person']} · {t['days_late']}d overdue",
+                        "assignee": t.get("assignee") or t.get("person"),
                         "source": "clickup",
                         "clickup_task_id": t.get("clickup_task_id"),
                     }
