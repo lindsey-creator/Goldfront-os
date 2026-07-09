@@ -21,7 +21,7 @@ from pathlib import Path
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
@@ -31,6 +31,7 @@ from brain.approvals import queue as approval_queue
 from brain.cockpit.read import CockpitRead
 from brain.connectors.base import ConnectorNotConfigured
 from brain.connectors import clickup, fieldy
+from brain.connectors import google_oauth
 from brain.connectors.clickup_sync import last_sync_result, maybe_sync
 from brain.connectors.status import connectors_status
 from brain.engine.deal_math import DealInputs, evaluate_deal
@@ -144,6 +145,53 @@ def team_pulse():
 def connectors_status_endpoint():
     """Which live connectors are configured (never exposes secrets)."""
     return connectors_status()
+
+
+@app.get("/connect/google")
+def connect_google_start():
+    """Redirect to Google consent (Calendar + Gmail readonly)."""
+    if not google_oauth.has_client_credentials():
+        return HTMLResponse(
+            google_oauth.missing_credentials_html(),
+            status_code=400,
+        )
+    state = google_oauth.create_oauth_state()
+    return RedirectResponse(google_oauth.build_authorization_url(state), status_code=302)
+
+
+@app.get("/google/oauth/callback")
+def connect_google_callback(
+    code: str | None = None,
+    state: str | None = None,
+    error: str | None = None,
+):
+    """OAuth callback — exchange code and persist refresh token to .env."""
+    if error:
+        return HTMLResponse(google_oauth.error_html(error), status_code=400)
+    if not state or not google_oauth.verify_oauth_state(state):
+        return HTMLResponse(google_oauth.error_html("Invalid or expired state."), status_code=400)
+    if not code:
+        return HTMLResponse(google_oauth.error_html("No authorization code received."), status_code=400)
+    if not google_oauth.has_client_credentials():
+        return HTMLResponse(google_oauth.missing_credentials_html(), status_code=400)
+    try:
+        tokens = google_oauth.exchange_code(code)
+    except Exception:
+        return HTMLResponse(
+            google_oauth.error_html("Token exchange failed. Check client ID, secret, and redirect URI."),
+            status_code=502,
+        )
+    refresh = tokens.get("refresh_token")
+    if not refresh:
+        return HTMLResponse(
+            google_oauth.error_html(
+                "No refresh token returned. Revoke app access at "
+                "https://myaccount.google.com/permissions and try again."
+            ),
+            status_code=502,
+        )
+    google_oauth.persist_refresh_token(refresh)
+    return HTMLResponse(google_oauth.success_html())
 
 
 @app.get("/calendar/week")
