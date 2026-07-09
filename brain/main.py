@@ -32,7 +32,7 @@ from brain.approvals import queue as approval_queue
 from brain.cockpit.read import CockpitRead
 from brain.connectors.base import ConnectorNotConfigured
 from brain.connectors import clickup, fieldy
-from brain.connectors import google_oauth
+from brain.connectors import google_oauth, whoop_oauth
 from brain.connectors.clickup_sync import last_sync_result, maybe_sync
 from brain.connectors.status import connectors_status
 from brain.engine.deal_math import DealInputs, evaluate_deal
@@ -61,8 +61,9 @@ app.include_router(training_router)
 
 @app.on_event("startup")
 def startup_background() -> None:
-    """Background ClickUp sync + legacy Google OAuth listener on :8765."""
+    """Background ClickUp sync + legacy OAuth listeners (:8765 Google, :8787 Whoop)."""
     google_oauth.start_legacy_callback_listener()
+    whoop_oauth.start_legacy_callback_listener()
 
     def run() -> None:
         try:
@@ -188,6 +189,8 @@ def connect_google_start(start: int = 0):
     """Setup wizard or redirect to Google consent (Calendar + Gmail readonly)."""
     if not google_oauth.has_client_credentials():
         return HTMLResponse(google_oauth.setup_wizard_html())
+    if google_oauth.credentials_look_placeholder():
+        return HTMLResponse(google_oauth.setup_wizard_html())
     if start != 1 and not google_oauth.has_refresh_token():
         return HTMLResponse(google_oauth.setup_wizard_html())
     state = google_oauth.create_oauth_state()
@@ -203,7 +206,7 @@ def connect_google_callback(
     """OAuth callback — exchange code and persist refresh token to .env."""
     if error:
         return HTMLResponse(
-            google_oauth.error_html(f"Google returned: {error}"),
+            google_oauth.error_html("Google sign-in failed.", google_error=error),
             status_code=400,
         )
     if not state or not google_oauth.verify_oauth_state(state):
@@ -215,7 +218,7 @@ def connect_google_callback(
     try:
         tokens = google_oauth.exchange_code(code)
     except httpx.HTTPStatusError as exc:
-        detail = exc.response.text[:300] if exc.response else str(exc)
+        detail = exc.response.text[:500] if exc.response else str(exc)
         return HTMLResponse(
             google_oauth.error_html("Token exchange failed.", detail=detail),
             status_code=502,
@@ -236,6 +239,94 @@ def connect_google_callback(
         )
     google_oauth.persist_refresh_token(refresh)
     return HTMLResponse(google_oauth.success_html())
+
+
+@app.get("/connect/whoop/status")
+def connect_whoop_status():
+    """Whoop OAuth setup progress (never exposes secrets)."""
+    return whoop_oauth.oauth_status()
+
+
+class WhoopOAuthConfig(BaseModel):
+    client_id: str
+    client_secret: str
+
+
+@app.post("/connect/whoop/config")
+async def connect_whoop_config(body: WhoopOAuthConfig):
+    """Save Whoop app credentials from the setup wizard to .env."""
+    try:
+        whoop_oauth.save_client_credentials(body.client_id, body.client_secret)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"status": "ok", **whoop_oauth.oauth_status()}
+
+
+@app.post("/connect/whoop/config/form")
+async def connect_whoop_config_form(
+    client_id: str = Form(""),
+    client_secret: str = Form(""),
+):
+    """HTML form POST from /connect/whoop wizard."""
+    try:
+        whoop_oauth.save_client_credentials(client_id, client_secret)
+        return HTMLResponse(whoop_oauth.setup_wizard_html(saved=True))
+    except ValueError as exc:
+        return HTMLResponse(whoop_oauth.setup_wizard_html(error=str(exc)), status_code=400)
+
+
+@app.get("/connect/whoop")
+def connect_whoop_start(start: int = 0):
+    """Setup wizard or redirect to Whoop consent."""
+    if not whoop_oauth.has_client_credentials():
+        return HTMLResponse(whoop_oauth.setup_wizard_html())
+    if start != 1 and not whoop_oauth.has_refresh_token():
+        return HTMLResponse(whoop_oauth.setup_wizard_html())
+    state = whoop_oauth.create_oauth_state()
+    return RedirectResponse(whoop_oauth.build_authorization_url(state), status_code=302)
+
+
+@app.get("/whoop/oauth/callback")
+def connect_whoop_callback(
+    code: str | None = None,
+    state: str | None = None,
+    error: str | None = None,
+):
+    """OAuth callback — exchange code and persist refresh token to .env."""
+    if error:
+        return HTMLResponse(
+            whoop_oauth.error_html(f"Whoop returned: {error}"),
+            status_code=400,
+        )
+    if not state or not whoop_oauth.verify_oauth_state(state):
+        return HTMLResponse(whoop_oauth.error_html("Invalid or expired state."), status_code=400)
+    if not code:
+        return HTMLResponse(whoop_oauth.error_html("No authorization code received."), status_code=400)
+    if not whoop_oauth.has_client_credentials():
+        return HTMLResponse(whoop_oauth.missing_credentials_html(), status_code=400)
+    try:
+        tokens = whoop_oauth.exchange_code(code)
+    except httpx.HTTPStatusError as exc:
+        detail = exc.response.text[:300] if exc.response else str(exc)
+        return HTMLResponse(
+            whoop_oauth.error_html("Token exchange failed.", detail=detail),
+            status_code=502,
+        )
+    except Exception as exc:
+        return HTMLResponse(
+            whoop_oauth.error_html("Token exchange failed.", detail=str(exc)[:300]),
+            status_code=502,
+        )
+    refresh = tokens.get("refresh_token")
+    if not refresh:
+        return HTMLResponse(
+            whoop_oauth.error_html(
+                "No refresh token returned. Ensure the offline scope is enabled and try again."
+            ),
+            status_code=502,
+        )
+    whoop_oauth.persist_tokens(refresh, tokens.get("access_token"))
+    return HTMLResponse(whoop_oauth.success_html())
 
 
 @app.get("/calendar/week")

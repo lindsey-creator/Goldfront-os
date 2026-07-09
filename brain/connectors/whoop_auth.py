@@ -34,6 +34,26 @@ def is_whoop_configured() -> bool:
     return is_oauth_configured() or is_legacy_configured()
 
 
+def has_orphaned_refresh_token() -> bool:
+    """Refresh token saved without client ID/secret — cannot refresh until fixed."""
+    return is_configured("WHOOP_REFRESH_TOKEN") and not is_configured(
+        "WHOOP_CLIENT_ID", "WHOOP_CLIENT_SECRET"
+    )
+
+
+def setup_note() -> str | None:
+    if has_orphaned_refresh_token():
+        return (
+            "Refresh token is saved but WHOOP_CLIENT_ID and WHOOP_CLIENT_SECRET are "
+            "missing — paste app credentials from developer.whoop.com (Connect Whoop below)."
+        )
+    if is_configured("WHOOP_CLIENT_ID", "WHOOP_CLIENT_SECRET") and not is_configured(
+        "WHOOP_REFRESH_TOKEN"
+    ):
+        return "Whoop app credentials saved — complete OAuth sign-in to get a refresh token."
+    return None
+
+
 def _persist_env_var(key: str, value: str) -> None:
     """Write rotated refresh token back to .env (never log values)."""
     if not ENV_PATH.is_file():
@@ -88,6 +108,11 @@ def _refresh_access_token() -> str:
 
 def get_access_token() -> str:
     """Return a valid Whoop access token (OAuth refresh or legacy static token)."""
+    if has_orphaned_refresh_token():
+        raise ConnectorNotConfigured(
+            "whoop",
+            ["WHOOP_CLIENT_ID", "WHOOP_CLIENT_SECRET"],
+        )
     if is_oauth_configured():
         return _refresh_access_token()
     if is_legacy_configured():

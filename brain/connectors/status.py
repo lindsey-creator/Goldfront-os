@@ -15,6 +15,7 @@ from brain.connectors import (
     weather,
     whoop,
 )
+from brain.connectors.whoop_auth import setup_note as whoop_setup_note
 
 GHL_TEAM_LOCATION_ID = "FFdZCVGXSQQThtHZEOYx"
 
@@ -37,6 +38,10 @@ def connectors_status() -> dict:
             "connected": connected,
             "env_vars": env_vars,
         }
+        if name == "whoop" and not connected:
+            note = whoop_setup_note()
+            if note:
+                info["setup_note"] = note
         if name == "ghl" and connected:
             loc = (os.getenv("GHL_LOCATION_ID") or "").strip()
             if loc:

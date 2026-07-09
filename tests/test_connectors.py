@@ -254,6 +254,20 @@ def test_whoop_token_refresh(monkeypatch):
         assert token == "at_whoop"
 
 
+def test_whoop_orphaned_refresh_token(monkeypatch):
+    monkeypatch.setenv("WHOOP_REFRESH_TOKEN", "orphaned")
+    monkeypatch.delenv("WHOOP_CLIENT_ID", raising=False)
+    monkeypatch.delenv("WHOOP_CLIENT_SECRET", raising=False)
+
+    from brain.connectors.whoop_auth import get_access_token, has_orphaned_refresh_token, setup_note
+
+    assert has_orphaned_refresh_token() is True
+    assert setup_note() is not None
+    with pytest.raises(ConnectorNotConfigured) as exc:
+        get_access_token()
+    assert "WHOOP_CLIENT_ID" in exc.value.env_vars
+
+
 def test_whoop_fetch_recovery(monkeypatch):
     monkeypatch.setenv("WHOOP_CLIENT_ID", "cid")
     monkeypatch.setenv("WHOOP_CLIENT_SECRET", "secret")
