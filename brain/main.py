@@ -19,7 +19,8 @@ load_dotenv()
 
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException
+import httpx
+from fastapi import FastAPI, Form, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
@@ -59,8 +60,9 @@ app.include_router(training_router)
 
 
 @app.on_event("startup")
-def startup_clickup_sync() -> None:
-    """Background pull of ClickUp into Brain memory when configured."""
+def startup_background() -> None:
+    """Background ClickUp sync + legacy Google OAuth listener on :8765."""
+    google_oauth.start_legacy_callback_listener()
 
     def run() -> None:
         try:
@@ -147,14 +149,47 @@ def connectors_status_endpoint():
     return connectors_status()
 
 
+@app.get("/connect/google/status")
+def connect_google_status():
+    """OAuth setup progress (never exposes secrets)."""
+    return google_oauth.oauth_status()
+
+
+class GoogleOAuthConfig(BaseModel):
+    client_id: str
+    client_secret: str
+
+
+@app.post("/connect/google/config")
+async def connect_google_config(body: GoogleOAuthConfig):
+    """Save OAuth client credentials from the setup wizard to .env."""
+    try:
+        google_oauth.save_client_credentials(body.client_id, body.client_secret)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"status": "ok", **google_oauth.oauth_status()}
+
+
+@app.post("/connect/google/config/form")
+async def connect_google_config_form(
+    client_id: str = Form(""),
+    client_secret: str = Form(""),
+):
+    """HTML form POST from /connect/google wizard."""
+    try:
+        google_oauth.save_client_credentials(client_id, client_secret)
+        return HTMLResponse(google_oauth.setup_wizard_html(saved=True))
+    except ValueError as exc:
+        return HTMLResponse(google_oauth.setup_wizard_html(error=str(exc)), status_code=400)
+
+
 @app.get("/connect/google")
-def connect_google_start():
-    """Redirect to Google consent (Calendar + Gmail readonly)."""
+def connect_google_start(start: int = 0):
+    """Setup wizard or redirect to Google consent (Calendar + Gmail readonly)."""
     if not google_oauth.has_client_credentials():
-        return HTMLResponse(
-            google_oauth.missing_credentials_html(),
-            status_code=400,
-        )
+        return HTMLResponse(google_oauth.setup_wizard_html())
+    if start != 1 and not google_oauth.has_refresh_token():
+        return HTMLResponse(google_oauth.setup_wizard_html())
     state = google_oauth.create_oauth_state()
     return RedirectResponse(google_oauth.build_authorization_url(state), status_code=302)
 
@@ -167,7 +202,10 @@ def connect_google_callback(
 ):
     """OAuth callback — exchange code and persist refresh token to .env."""
     if error:
-        return HTMLResponse(google_oauth.error_html(error), status_code=400)
+        return HTMLResponse(
+            google_oauth.error_html(f"Google returned: {error}"),
+            status_code=400,
+        )
     if not state or not google_oauth.verify_oauth_state(state):
         return HTMLResponse(google_oauth.error_html("Invalid or expired state."), status_code=400)
     if not code:
@@ -176,9 +214,15 @@ def connect_google_callback(
         return HTMLResponse(google_oauth.missing_credentials_html(), status_code=400)
     try:
         tokens = google_oauth.exchange_code(code)
-    except Exception:
+    except httpx.HTTPStatusError as exc:
+        detail = exc.response.text[:300] if exc.response else str(exc)
         return HTMLResponse(
-            google_oauth.error_html("Token exchange failed. Check client ID, secret, and redirect URI."),
+            google_oauth.error_html("Token exchange failed.", detail=detail),
+            status_code=502,
+        )
+    except Exception as exc:
+        return HTMLResponse(
+            google_oauth.error_html("Token exchange failed.", detail=str(exc)[:300]),
             status_code=502,
         )
     refresh = tokens.get("refresh_token")

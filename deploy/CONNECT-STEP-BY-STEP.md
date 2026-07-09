@@ -111,14 +111,21 @@ GOLDFRONT_OWNER=lindsey
 
 ### You do — Google Cloud Console
 
+> **Not a service account.** A service account JSON key (e.g. `conrad-team@….iam.gserviceaccount.com`) cannot read your personal Gmail or Calendar. You need an **OAuth 2.0 Client ID** (Desktop or Web) so you sign in once as yourself and Brain stores a refresh token. Domain-wide delegation for Workspace is a different, advanced path — not what Brain uses today.
+
 1. [Google Cloud Console](https://console.cloud.google.com/) → create/select project
 2. **APIs & Services → Library** → enable **Google Calendar API** and **Gmail API**
 3. **OAuth consent screen** → External → add your Gmail as test user
-4. **Credentials → Create → OAuth client ID** → Desktop app
-5. Edit client → Authorized redirect URIs → add:
-   ```
-   http://localhost:8765/oauth2callback
-   ```
+4. **Credentials → Create → OAuth client ID** → Desktop app (or Web if you prefer)
+5. Edit client → Authorized redirect URIs → add **one** of:
+   - **Recommended (Brain running on :8000):**
+     ```
+     http://127.0.0.1:8000/google/oauth/callback
+     ```
+   - **Alternative (CLI script only):**
+     ```
+     http://localhost:8765/oauth2callback
+     ```
 6. Copy Client ID and Client Secret
 
 ### Paste this
@@ -131,12 +138,20 @@ GOOGLE_CALENDAR_ID=primary
 
 ### You do — One-time OAuth
 
+**Recommended — Brain-hosted flow** (Brain must already be running on :8000):
+
+1. Add `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` to `.env`, restart Brain if needed.
+2. Open **http://127.0.0.1:8000/connect/google** and complete sign-in.
+3. Google redirects to Brain; refresh token is saved to `.env`.
+
+**Alternative — CLI script** (starts its own listener on **8765**):
+
 ```bash
 cd ~/Documents/Claude/Projects/Brain/goldfront-os
 python3 scripts/google_oauth_setup.py
 ```
 
-Script listens on **port 8765**, opens browser, writes `GOOGLE_REFRESH_TOKEN` to `.env`.
+> **Trap:** `ERR_CONNECTION_REFUSED` on `:8765/oauth2callback` means nothing is listening — either run the script above **before** signing in and **keep the terminal open**, or switch to the Brain flow (`:8000/connect/google`) and register the `:8000` redirect URI instead.
 
 ### Echo does
 

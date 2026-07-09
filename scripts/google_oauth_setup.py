@@ -9,6 +9,13 @@ Prerequisites:
      http://localhost:8765/oauth2callback
   3. GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET in .env (or enter when prompted)
 
+Prefer Brain-hosted OAuth when uvicorn is already running on :8000:
+  - Register http://127.0.0.1:8000/google/oauth/callback in Google Cloud
+  - Visit http://127.0.0.1:8000/connect/google (see .env.example)
+
+This script is an alternative CLI flow. It binds :8765 before opening the browser;
+keep this terminal open until sign-in completes or Google hits ERR_CONNECTION_REFUSED.
+
 Usage:
   cd goldfront-os && python3 scripts/google_oauth_setup.py
 """

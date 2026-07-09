@@ -29,17 +29,54 @@ def clear_google_env(monkeypatch):
     google_oauth._pending_states.clear()
 
 
-def test_connect_google_missing_credentials(client):
+def test_connect_google_shows_wizard_when_missing_credentials(client):
     resp = client.get("/connect/google", follow_redirects=False)
-    assert resp.status_code == 400
-    assert "GOOGLE_CLIENT_ID" in resp.text
+    assert resp.status_code == 200
+    assert "Step 3" in resp.text
+    assert "GOOGLE_CLIENT_ID" not in resp.text or "client_id" in resp.text
     assert google_oauth.redirect_uri() in resp.text
+
+
+def test_connect_google_status(client):
+    resp = client.get("/connect/google/status")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["has_client_id"] is False
+    assert data["redirect_uri"] == google_oauth.redirect_uri()
+
+
+def test_connect_google_config_saves_credentials(client, monkeypatch, tmp_path):
+    monkeypatch.setattr(google_oauth, "ENV_PATH", tmp_path / ".env")
+    resp = client.post(
+        "/connect/google/config",
+        json={
+            "client_id": "abc123.apps.googleusercontent.com",
+            "client_secret": "GOCSPX-test",
+        },
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["status"] == "ok"
+    assert data["has_client_id"] is True
+    assert data["ready_to_connect"] is True
+    env_text = (tmp_path / ".env").read_text(encoding="utf-8")
+    assert "GOOGLE_CLIENT_ID=abc123.apps.googleusercontent.com" in env_text
+    assert "GOCSPX-test" in env_text
+
+
+def test_connect_google_config_rejects_bad_client_id(client, monkeypatch, tmp_path):
+    monkeypatch.setattr(google_oauth, "ENV_PATH", tmp_path / ".env")
+    resp = client.post(
+        "/connect/google/config",
+        json={"client_id": "bad", "client_secret": "secret"},
+    )
+    assert resp.status_code == 400
 
 
 def test_connect_google_redirects_when_configured(client, monkeypatch):
     monkeypatch.setenv("GOOGLE_CLIENT_ID", "test-client-id")
     monkeypatch.setenv("GOOGLE_CLIENT_SECRET", "test-client-secret")
-    resp = client.get("/connect/google", follow_redirects=False)
+    resp = client.get("/connect/google?start=1", follow_redirects=False)
     assert resp.status_code == 302
     location = resp.headers["location"]
     assert location.startswith("https://accounts.google.com/o/oauth2/v2/auth")
@@ -55,7 +92,7 @@ def test_oauth_callback_persists_refresh_token(client, monkeypatch, tmp_path):
 
     state = google_oauth.create_oauth_state()
 
-    def fake_exchange(code: str) -> dict:
+    def fake_exchange(code: str, *, callback_redirect_uri: str | None = None) -> dict:
         assert code == "auth-code-123"
         return {"refresh_token": "refresh-token-xyz", "access_token": "at"}
 

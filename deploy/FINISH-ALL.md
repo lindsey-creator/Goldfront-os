@@ -37,14 +37,17 @@
 1. Open **Chrome Profile 10** → [Google Cloud Credentials](https://console.cloud.google.com/apis/credentials)
 2. Create **OAuth 2.0 Client ID** → type **Desktop app**
 3. Enable **Calendar API** + **Gmail API** on the project
-4. Add redirect URI: `http://localhost:8765/oauth2callback`
+4. Add redirect URI (pick one flow — do not mix):
+   - **Recommended:** `http://127.0.0.1:8000/google/oauth/callback` → then open `http://127.0.0.1:8000/connect/google`
+   - **CLI script:** `http://localhost:8765/oauth2callback` → run `python3 scripts/google_oauth_setup.py` and **keep terminal open** until sign-in finishes
 5. Paste into `.env`:
    - `GOOGLE_CLIENT_ID`
    - `GOOGLE_CLIENT_SECRET`
-6. Run (opens browser, saves refresh token — never prints secrets):
+6. Complete OAuth (Brain flow: visit `/connect/google`; CLI: run script below):
 
 ```bash
 cd ~/Documents/Claude/Projects/Brain/goldfront-os
+# Only if you registered the :8765 redirect URI:
 python3 scripts/google_oauth_setup.py
 ```
 
