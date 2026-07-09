@@ -281,11 +281,12 @@ def assign_task(
     else:
         ids = [int(uid) for uid in assignee_ids]
     task = _put(f"/task/{task_id}", {"assignees": {"add": ids, "rem": []}})
-    if note:
-        label = assignee_name or "team member"
+    comment = (note or "").strip()
+    if comment:
+        label = (assignee_name or "").strip() or "team member"
         add_comment(
             task_id,
-            f"Reassigned via Echo Command to {label}: {note}",
+            f"Reassigned via Echo Command to {label}: {comment}",
         )
     return task
 
