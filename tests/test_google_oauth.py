@@ -43,6 +43,8 @@ def test_connect_google_status(client):
     data = resp.json()
     assert data["has_client_id"] is False
     assert data["redirect_uri"] == google_oauth.redirect_uri()
+    assert "credentials_look_placeholder" in data
+    assert "needs_sign_in" in data
 
 
 def test_connect_google_config_saves_credentials(client, monkeypatch, tmp_path):
@@ -71,6 +73,48 @@ def test_connect_google_config_rejects_bad_client_id(client, monkeypatch, tmp_pa
         json={"client_id": "bad", "client_secret": "secret"},
     )
     assert resp.status_code == 400
+
+
+def test_connect_google_config_rejects_placeholder_credentials(client, monkeypatch, tmp_path):
+    monkeypatch.setattr(google_oauth, "ENV_PATH", tmp_path / ".env")
+    resp = client.post(
+        "/connect/google/config",
+        json={
+            "client_id": "123456789012-abcdefghijklmnop.apps.googleusercontent.com",
+            "client_secret": "GOCSPX-xxxxxxxxxxxxxxxxxxxx",
+        },
+    )
+    assert resp.status_code == 400
+    assert "placeholder" in resp.json()["detail"].lower()
+
+
+def test_credentials_look_placeholder_detects_example_values(monkeypatch):
+    monkeypatch.setenv(
+        "GOOGLE_CLIENT_ID",
+        "123456789012-abcdefghijklmnop.apps.googleusercontent.com",
+    )
+    monkeypatch.setenv("GOOGLE_CLIENT_SECRET", "GOCSPX-xxxxxxxxxxxxxxxxxxxx")
+    assert google_oauth.credentials_look_placeholder() is True
+
+
+def test_format_oauth_error_invalid_client():
+    message, hint = google_oauth.format_oauth_error(
+        detail='{"error":"invalid_client","error_description":"The OAuth client was not found."}'
+    )
+    assert "Invalid OAuth client" in message
+    assert hint is not None
+    assert "Google Cloud" in hint
+
+
+def test_connect_google_blocks_placeholder_redirect(client, monkeypatch):
+    monkeypatch.setenv(
+        "GOOGLE_CLIENT_ID",
+        "123456789012-abcdefghijklmnop.apps.googleusercontent.com",
+    )
+    monkeypatch.setenv("GOOGLE_CLIENT_SECRET", "GOCSPX-xxxxxxxxxxxxxxxxxxxx")
+    resp = client.get("/connect/google?start=1", follow_redirects=False)
+    assert resp.status_code == 200
+    assert "Placeholder credentials" in resp.text
 
 
 def test_connect_google_redirects_when_configured(client, monkeypatch):

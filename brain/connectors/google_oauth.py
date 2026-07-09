@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 import re
 import secrets
@@ -51,6 +52,77 @@ def has_refresh_token() -> bool:
     return bool(os.getenv("GOOGLE_REFRESH_TOKEN", "").strip())
 
 
+_PLACEHOLDER_CLIENT_PATTERNS = (
+    re.compile(r"abcdefghijklmnop", re.I),
+    re.compile(r"^123456789012-", re.I),
+    re.compile(r"your[_-]?client[_-]?id", re.I),
+    re.compile(r"example\.apps\.googleusercontent\.com", re.I),
+    re.compile(r"^test\.apps\.googleusercontent\.com$", re.I),
+)
+_PLACEHOLDER_SECRET_PATTERNS = (
+    re.compile(r"x{4,}", re.I),
+    re.compile(r"your[_-]?client[_-]?secret", re.I),
+)
+
+
+def credentials_look_placeholder() -> bool:
+    """True when .env still has doc/example values instead of real Google creds."""
+    cid = os.getenv("GOOGLE_CLIENT_ID", "").strip()
+    secret = os.getenv("GOOGLE_CLIENT_SECRET", "").strip()
+    if not cid and not secret:
+        return False
+    if any(p.search(cid) for p in _PLACEHOLDER_CLIENT_PATTERNS):
+        return True
+    if secret and any(p.search(secret) for p in _PLACEHOLDER_SECRET_PATTERNS):
+        return True
+    return False
+
+
+def format_oauth_error(*, google_error: str | None = None, detail: str | None = None) -> tuple[str, str | None]:
+    """Turn Google OAuth errors into short user-facing text + optional hint."""
+    code = (google_error or "").strip()
+    hint: str | None = None
+    raw = (detail or "").strip()
+    if raw.startswith("{"):
+        try:
+            payload = json.loads(raw)
+            code = str(payload.get("error") or code)
+            desc = str(payload.get("error_description") or "").strip()
+            if desc:
+                raw = desc
+        except json.JSONDecodeError:
+            pass
+
+    if code == "invalid_client":
+        message = "Invalid OAuth client ID or secret."
+        hint = (
+            "Copy the real Client ID and secret from Google Cloud → Credentials. "
+            "Example/placeholder values in .env will not work."
+        )
+    elif code == "redirect_uri_mismatch":
+        message = "Redirect URI mismatch."
+        hint = (
+            f"Add this exact URI to your OAuth client in Google Cloud: {redirect_uri()}. "
+            "Web clients need an exact match; Desktop clients can use the legacy URI on port 8765."
+        )
+    elif code == "access_denied":
+        message = "Google sign-in was cancelled or denied."
+        hint = "Try again and approve Calendar + Gmail access. Add your Gmail as a test user on the OAuth consent screen."
+    elif code == "invalid_grant":
+        message = "Authorization code expired or already used."
+        hint = "Click Connect Google again to start a fresh sign-in."
+    elif google_error:
+        message = f"Google returned: {google_error}"
+    elif raw:
+        message = raw[:200]
+    else:
+        message = "Google OAuth failed."
+
+    if not hint and raw and raw != message:
+        hint = raw[:300]
+    return message, hint
+
+
 def reload_env() -> None:
     """Re-read GOOGLE_* keys from .env into os.environ (after writes)."""
     if not ENV_PATH.is_file():
@@ -89,6 +161,14 @@ def save_client_credentials(client_id: str, client_secret: str) -> None:
         raise ValueError("Client ID and secret are required.")
     if not cid.endswith(".apps.googleusercontent.com"):
         raise ValueError("Client ID should end with .apps.googleusercontent.com")
+    if any(p.search(cid) for p in _PLACEHOLDER_CLIENT_PATTERNS):
+        raise ValueError(
+            "That Client ID looks like a placeholder. Paste the real value from Google Cloud → Credentials."
+        )
+    if any(p.search(secret) for p in _PLACEHOLDER_SECRET_PATTERNS):
+        raise ValueError(
+            "That client secret looks like a placeholder. Paste the real GOCSPX-… value from Google Cloud."
+        )
     set_env_var("GOOGLE_CLIENT_ID", cid)
     set_env_var("GOOGLE_CLIENT_SECRET", secret)
     if not os.getenv("GOOGLE_CALENDAR_ID", "").strip():
@@ -98,14 +178,18 @@ def save_client_credentials(client_id: str, client_secret: str) -> None:
 
 
 def oauth_status() -> dict:
+    placeholder = credentials_look_placeholder()
+    has_creds = has_client_credentials()
     return {
         "has_client_id": bool(os.getenv("GOOGLE_CLIENT_ID", "").strip()),
         "has_client_secret": bool(os.getenv("GOOGLE_CLIENT_SECRET", "").strip()),
         "has_refresh_token": has_refresh_token(),
         "redirect_uri": redirect_uri(),
         "legacy_redirect_uri": legacy_redirect_uri(),
-        "ready_to_connect": has_client_credentials() and not has_refresh_token(),
-        "connected": has_client_credentials() and has_refresh_token(),
+        "ready_to_connect": has_creds and not has_refresh_token() and not placeholder,
+        "connected": has_creds and has_refresh_token(),
+        "credentials_look_placeholder": placeholder,
+        "needs_sign_in": has_creds and not has_refresh_token(),
         "credentials_url": GOOGLE_CREDENTIALS_URL,
     }
 
@@ -198,10 +282,53 @@ def setup_wizard_html(*, saved: bool = False, error: str | None = None) -> str:
         safe = error.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
         msg = f'<div class="msg err">{safe}</div>'
     elif saved:
-        msg = '<div class="msg ok">Credentials saved. Click Connect Google below.</div>'
+        msg = '<div class="msg ok">Credentials saved. Click <strong>Connect Google</strong> below to finish.</div>'
+    elif status["credentials_look_placeholder"]:
+        msg = (
+            '<div class="msg err"><strong>Placeholder credentials detected.</strong> '
+            "The Client ID/secret in <code>.env</code> look like examples, not real Google Cloud values. "
+            "Paste your real credentials in Step 3, then connect.</div>"
+        )
+    elif status["needs_sign_in"] and not status["connected"]:
+        msg = (
+            '<div class="msg ok">Client credentials saved. '
+            '<strong>Step 4:</strong> click Connect Google to sign in and save the refresh token.</div>'
+        )
+
+    show_credential_form = (
+        not status["has_client_id"]
+        or not status["has_client_secret"]
+        or status["credentials_look_placeholder"]
+    )
+    credentials_block = ""
+    if show_credential_form:
+        credentials_block = """
+<div class="step">
+<h3>Step 3 — Paste client credentials</h3>
+<form method="post" action="/connect/google/config/form">
+<label for="client_id">Client ID</label>
+<input id="client_id" name="client_id" type="text" placeholder="….apps.googleusercontent.com" autocomplete="off" required>
+<label for="client_secret">Client secret</label>
+<input id="client_secret" name="client_secret" type="password" placeholder="GOCSPX-…" autocomplete="off" required>
+<button type="submit">Save credentials</button>
+</form>
+</div>"""
+    else:
+        credentials_block = """
+<div class="step">
+<h3>Step 3 — Client credentials</h3>
+<p>Saved in <code>.env</code>. To replace them, use the form below.</p>
+<form method="post" action="/connect/google/config/form">
+<label for="client_id">Client ID</label>
+<input id="client_id" name="client_id" type="text" placeholder="….apps.googleusercontent.com" autocomplete="off" required>
+<label for="client_secret">Client secret</label>
+<input id="client_secret" name="client_secret" type="password" placeholder="GOCSPX-…" autocomplete="off" required>
+<button type="submit">Update credentials</button>
+</form>
+</div>"""
 
     connect_block = ""
-    if status["has_client_id"] and status["has_client_secret"]:
+    if status["ready_to_connect"]:
         connect_block = """
 <div class="step">
 <h3>Step 4 — Sign in with Google</h3>
@@ -225,16 +352,7 @@ def setup_wizard_html(*, saved: bool = False, error: str | None = None) -> str:
 <p>Legacy CLI port (Brain now listens here too):</p>
 <pre>{legacy}</pre>
 </div>
-<div class="step">
-<h3>Step 3 — Paste client credentials</h3>
-<form method="post" action="/connect/google/config/form">
-<label for="client_id">Client ID</label>
-<input id="client_id" name="client_id" type="text" placeholder="….apps.googleusercontent.com" autocomplete="off" required>
-<label for="client_secret">Client secret</label>
-<input id="client_secret" name="client_secret" type="password" placeholder="GOCSPX-…" autocomplete="off" required>
-<button type="submit">Save credentials</button>
-</form>
-</div>
+{credentials_block}
 {connect_block}
 <p><a href="/">← Command Center</a></p>""",
     )
@@ -253,10 +371,19 @@ def success_html() -> str:
     )
 
 
-def error_html(message: str, *, detail: str | None = None) -> str:
-    safe = message.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+def error_html(
+    message: str,
+    *,
+    detail: str | None = None,
+    google_error: str | None = None,
+) -> str:
+    friendly, hint = format_oauth_error(google_error=google_error, detail=detail or message)
+    safe = (friendly if google_error or detail else message).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
     extra = ""
-    if detail:
+    if hint:
+        h = hint.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+        extra = f"<p><strong>What to do:</strong> {h}</p>"
+    elif detail and detail != message:
         d = detail.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
         extra = f"<p><small>{d}</small></p>"
     return _page_shell(
@@ -264,9 +391,10 @@ def error_html(message: str, *, detail: str | None = None) -> str:
         f"""<h2>Could not connect Google</h2>
 <p>{safe}</p>
 {extra}
-<p>Check that your OAuth client redirect URI matches:</p>
+<p>Authorized redirect URI for this Brain:</p>
 <pre>{redirect_uri()}</pre>
-<p><a class="btn" href="/connect/google">Try again</a></p>""",
+<p><a class="btn" href="/connect/google">Back to setup wizard</a>
+<a class="btn" href="/connect/google?start=1" style="margin-left:.5rem;background:#3f3f46">Retry sign-in</a></p>""",
     )
 
 
@@ -286,7 +414,7 @@ def legacy_trap_html() -> str:
 def _handle_legacy_oauth_callback(query: str) -> bytes:
     qs = urllib.parse.parse_qs(query)
     if qs.get("error"):
-        body = error_html(f"Google returned: {qs['error'][0]}")
+        body = error_html("Google sign-in failed.", google_error=qs["error"][0])
         return body.encode("utf-8")
     code = qs.get("code", [""])[0]
     if not code:
@@ -296,7 +424,7 @@ def _handle_legacy_oauth_callback(query: str) -> bytes:
     try:
         tokens = exchange_code(code, callback_redirect_uri=legacy_redirect_uri())
     except httpx.HTTPStatusError as exc:
-        detail = exc.response.text[:300] if exc.response else str(exc)
+        detail = exc.response.text[:500] if exc.response else str(exc)
         return error_html("Token exchange failed on legacy port.", detail=detail).encode("utf-8")
     except Exception as exc:
         return error_html("Token exchange failed.", detail=str(exc)[:300]).encode("utf-8")
