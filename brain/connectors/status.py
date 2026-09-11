@@ -18,6 +18,8 @@ from brain.connectors import (
 from brain.connectors.whoop_auth import setup_note as whoop_setup_note
 
 GHL_TEAM_LOCATION_ID = "FFdZCVGXSQQThtHZEOYx"
+# Personal sub-account used by rhinolending.capital/apply capture — not Brain CRM writes.
+GHL_PERSONAL_APPLY_LOCATION_ID = "3nUeqiIgQEtLuQJUbWVO"
 
 
 def connectors_status() -> dict:
@@ -44,17 +46,24 @@ def connectors_status() -> dict:
                 info["setup_note"] = note
         if name == "ghl" and connected:
             loc = (os.getenv("GHL_LOCATION_ID") or "").strip()
+            info["team_location_id"] = GHL_TEAM_LOCATION_ID
+            info["personal_apply_location_id"] = GHL_PERSONAL_APPLY_LOCATION_ID
             if loc:
                 info["active_location_id"] = loc
-                info["team_location_id"] = GHL_TEAM_LOCATION_ID
                 if loc == GHL_TEAM_LOCATION_ID:
                     info["location_label"] = "Team (The Conrad Team)"
-                else:
-                    info["location_label"] = "Personal sub-account"
+                elif loc == GHL_PERSONAL_APPLY_LOCATION_ID:
+                    info["location_label"] = "Personal (apply capture only)"
                     info["location_note"] = (
-                        "Operating doc uses team location "
-                        f"{GHL_TEAM_LOCATION_ID}. Set GHL_LOCATION_ID to that ID "
-                        "in goldfront-os/.env to read team CRM."
+                        "This ID is for rhinolending.capital/apply lead capture. "
+                        f"Set GHL_LOCATION_ID={GHL_TEAM_LOCATION_ID} for team CRM."
+                    )
+                else:
+                    info["location_label"] = "Other sub-account"
+                    info["location_note"] = (
+                        f"Team CRM: {GHL_TEAM_LOCATION_ID}. "
+                        f"Apply capture (do not use for Brain writes): "
+                        f"{GHL_PERSONAL_APPLY_LOCATION_ID}."
                     )
         connectors[name] = info
     connected_count = sum(1 for c in connectors.values() if c["connected"])

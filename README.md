@@ -1,11 +1,15 @@
-# Goldfront OS
+# Goldfront OS (Brain)
 
 **One brain for the whole operation.** A private operating system that runs the
 Conrad / Goldfront multi-vertical lending and construction business — holding the
 deal rules, decision history, and voice of the operator, and using them to
 evaluate deals, draft communications, brief daily, and train the team.
 
+**Live glass:** On Manus, this repo serves **[JARVIS Command Center](https://github.com/lindsey-creator/conrad-command-center)** — the React UI built to `dist/` and mounted at `/` by FastAPI. Brain is the API; Command Center is what Lindsey opens. See [`docs/jarvis-command-center.md`](docs/jarvis-command-center.md).
+
 Full definition lives in [`docs/master-spec.md`](docs/master-spec.md). Read that first.
+
+**Operator:** Lindsey Conrad (he/him).
 
 ---
 
@@ -64,7 +68,8 @@ goldfront-os/
 │   └── training/            # /train/* + divergence + importers — REAL
 │       └── importers/       # bulk messages · Apollo · ClickUp · Fieldy
 ├── samples/                 # example files to try the importers
-├── cockpit/                 # React front end (built after the Brain works)
+├── docs/jarvis-command-center.md  # Brain ↔ Command Center wiring + GHL IDs
+├── cockpit/                 # legacy pointer — UI lives in conrad-command-center repo
 └── tests/                   # engine + training tests (40)
 ```
 

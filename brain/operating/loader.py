@@ -1,4 +1,4 @@
-"""Runtime loader for OPERATING_BRAIN.md — single source of truth for Echo."""
+"""Runtime loader for OPERATING_BRAIN.md — single source of truth for JARVIS."""
 
 from __future__ import annotations
 
