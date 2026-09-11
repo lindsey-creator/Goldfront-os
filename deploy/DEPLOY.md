@@ -1,6 +1,7 @@
 # Deploy the Superman Brain to the Manus box
 
-One app, one port. FastAPI serves the Command Center UI after `npm run build`.
+One app, one port. FastAPI serves **JARVIS Command Center** (`conrad-command-center` `dist/`)
+after `npm run build`. Brain + glass wiring: **`docs/jarvis-command-center.md`**.
 
 **Manus box:** `102.210.17.121`  
 **Primary domain:** `https://conradstrong.com` → A record to that IP (see `deploy/CONRADSTRONG-DEPLOY.md`)  
@@ -58,7 +59,7 @@ Serves at `http://0.0.0.0:8000`. Requires Python 3.9+, Node.js, and npm on the b
 ## Verify (on Manus)
 
 ```bash
-curl -sf http://127.0.0.1:8000/health
+curl -sf http://127.0.0.1:8000/health   # JARVIS live: status ok, command jarvis, ui_built
 curl -sf http://127.0.0.1:8000/connectors/status | python3 -m json.tool | head -40
 curl -sf -o /dev/null -w '%{http_code}\n' http://127.0.0.1:8000/
 ```

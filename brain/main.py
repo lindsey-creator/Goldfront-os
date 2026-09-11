@@ -40,6 +40,11 @@ from brain.memory.knowledge_base import KnowledgeBase
 from brain.training.endpoints import router as training_router
 from brain.validation import shadow
 
+# Sibling UI build (Manus: ~/Documents/Claude/Projects/Brain/conrad-command-center/dist)
+_COMMAND_CENTER_DIST = (
+    Path(__file__).resolve().parent.parent.parent / "conrad-command-center" / "dist"
+)
+
 app = FastAPI(title="Goldfront OS — Brain", version="0.1.0")
 app.add_middleware(
     CORSMiddleware,
@@ -86,7 +91,14 @@ class DealRequest(BaseModel):
 
 @app.get("/health")
 def health():
-    return {"status": "ok", "service": "goldfront-brain"}
+    """Liveness for load balancers and Command Center 'JARVIS live' indicator."""
+    return {
+        "status": "ok",
+        "service": "goldfront-brain",
+        "command": "jarvis",
+        "glass": "conrad-command-center",
+        "ui_built": _COMMAND_CENTER_DIST.is_dir(),
+    }
 
 
 @app.post("/evaluate-deal")
@@ -633,9 +645,6 @@ def chat(req: ChatRequest):
 
 
 # -- Command Center UI (production: single-port web app) --------------------
-_COMMAND_CENTER_DIST = (
-    Path(__file__).resolve().parent.parent.parent / "conrad-command-center" / "dist"
-)
 
 
 def _mount_command_center() -> None:

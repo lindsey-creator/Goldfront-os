@@ -1,6 +1,7 @@
 # Deploy to Manus (always-on box)
 
-Conrad Command Center (React) + Goldfront OS Brain (FastAPI) on **one port**: `http://<manus>:8000`.
+**JARVIS Command Center** (React, `lindsey-creator/conrad-command-center`) + Goldfront OS
+Brain (FastAPI) on **one port**: `http://<manus>:8000`. See `docs/jarvis-command-center.md`.
 
 ## SSH search result (this Mac)
 
