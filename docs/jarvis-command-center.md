@@ -77,5 +77,5 @@ Lindsey Conrad uses **he/him**. Keep docs and operator-facing copy aligned.
 ## Related
 
 - Experience modules: `docs/command-center-experience.md`
-- Deploy: `deploy/DEPLOY.md`, `deploy/manus/README.md`
+- Deploy: `deploy/DEPLOY.md`, `deploy/RAILWAY.md`, `deploy/manus/README.md`
 - Master product spec: `docs/master-spec.md`

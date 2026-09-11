@@ -1,0 +1,15 @@
+.git
+.gitignore
+.venv
+**/__pycache__
+**/*.py[cod]
+.env
+.env.*
+!.env.example
+tests
+samples
+cockpit
+docs
+*.md
+deploy/manus
+deploy/*.sh

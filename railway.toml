@@ -1,0 +1,12 @@
+# https://docs.railway.com/reference/config-as-code
+# Public URL: https://jarvis-brain-production-8def.up.railway.app
+# Service PORT must stay 8000 (Railway domain binding).
+[build]
+builder = "DOCKERFILE"
+dockerfilePath = "Dockerfile"
+
+[deploy]
+healthcheckPath = "/health"
+healthcheckTimeout = 300
+restartPolicyType = "ON_FAILURE"
+restartPolicyMaxRetries = 5
