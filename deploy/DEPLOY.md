@@ -15,6 +15,8 @@ after `npm run build`. Brain + glass wiring: **`docs/jarvis-command-center.md`**
 
 Full finish checklist and three sync options: **`deploy/MANUS-FINISH.md`**.
 
+**Primary Type-1 host (Railway JARVIS):** **`deploy/RAILWAY.md`** — one service, Brain + Command Center UI, `command.theconradteam.com`.
+
 ---
 
 ## Fastest finish (on Manus terminal)
