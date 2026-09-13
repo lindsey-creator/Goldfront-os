@@ -13,7 +13,7 @@ All systems run through **Cursor-built JARVIS** — the sole command glass on Ra
 | Piece | Where |
 |-------|--------|
 | Brain API + static UI | Single process: `uvicorn brain.main:app` on `$PORT` |
-| UI assets | Built at Docker build time from public GitHub [`conrad-command-center`](https://github.com/lindsey-creator/conrad-command-center.git) `main` → `/app/conrad-command-center/dist` |
+| UI assets | Built at Docker build time from public GitHub [`conrad-command-center`](https://github.com/lindsey-creator/conrad-command-center.git) (branch from `CONRAD_COMMAND_CENTER_REF`) → `/app/conrad-command-center/dist` |
 | Path resolution | Same as Manus: `brain/main.py` mounts sibling `../conrad-command-center/dist` (see `deploy/manus/Dockerfile` / `deploy/build_and_run.sh`) |
 | Health | `GET /health` → `status=ok`, `command=jarvis` (also `glass`, `ui_built`) |
 | Public URL | **`https://jarvis-brain-production-8def.up.railway.app`** — enough for production. Custom DNS is optional and not required. |
@@ -69,6 +69,19 @@ Full connector checklist and Manus-oriented steps still apply for **secrets sour
 ## 2. Environment variables (required names only — never commit values)
 
 In Railway → your service → **Variables**, paste from local `.env` / `.env.example`. **Do not invent secrets in docs or chat.**
+
+### HUD clone (Docker build args — required to ship a new Command Center)
+
+Railway Dockerfile builds do **not** see service variables unless they are declared as `ARG` in the stage that uses them. Railway matches **same-named** service variables to those `ARG`s ([Using variables at build time](https://docs.railway.com/builds/dockerfiles#using-variables-at-build-time)).
+
+The HUD clone `RUN` includes `ARG HUD_BUILD` so changing the variable invalidates Docker layer cache. Bumping the env var **without** that `ARG` in the clone layer keeps serving the old EchoCommand HUD (`index-CFcY0PL_.js`).
+
+| Variable | Purpose |
+|----------|---------|
+| `CONRAD_COMMAND_CENTER_REF` | Git branch/tag to clone (default `main`). Phase 1 HUD: `cursor/jarvis-iron-man-hud-2fef` |
+| `HUD_BUILD` | Cache-bust token used in the clone `RUN`. Bump to force a fresh clone, e.g. `2026-09-13-phase1-jenman` |
+
+These are **not** runtime secrets. They must exist as Railway **Variables** (which Railway passes as Docker build args when the names match `ARG`). After setting or bumping `HUD_BUILD`, trigger a rebuild.
 
 ### Core (set on every deploy)
 
@@ -181,6 +194,7 @@ Iron Man voice input is **OS-level dictation** into the JARVIS command line on L
 
 - [ ] GitHub repo connected; deploy from `master`
 - [ ] `PORT=8000` set on the service
+- [ ] `CONRAD_COMMAND_CENTER_REF` + `HUD_BUILD` set as service Variables (Docker `ARG`s) so the HUD clone is not stale
 - [ ] Variables pasted from `.env` (Team GHL ID, Google, WHOOP, Meta, ClickUp, Fieldy, Anthropic)
 - [ ] `https://jarvis-brain-production-8def.up.railway.app/health` shows `"command":"jarvis"`
 - [ ] `/` loads Iron Man HUD (not JSON error)

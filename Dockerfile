@@ -11,9 +11,12 @@ RUN apt-get update \
 
 ARG CONRAD_COMMAND_CENTER_REPO=https://github.com/lindsey-creator/conrad-command-center.git
 ARG CONRAD_COMMAND_CENTER_REF=main
+# Railway HUD_BUILD must be an ARG in this RUN or Docker reuses a stale HUD clone.
+ARG HUD_BUILD=dev
 
 WORKDIR /build
-RUN git clone --depth 1 --branch "${CONRAD_COMMAND_CENTER_REF}" \
+RUN echo "HUD clone ${CONRAD_COMMAND_CENTER_REF} build=${HUD_BUILD}" \
+  && git clone --depth 1 --branch "${CONRAD_COMMAND_CENTER_REF}" \
   "${CONRAD_COMMAND_CENTER_REPO}" conrad-command-center
 
 WORKDIR /build/conrad-command-center
