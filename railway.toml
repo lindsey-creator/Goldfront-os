@@ -1,6 +1,9 @@
 # https://docs.railway.com/reference/config-as-code
 # Public URL: https://jarvis-brain-production-8def.up.railway.app
 # Service PORT must stay 8000 (Railway domain binding).
+# HUD cache bust: set service vars CONRAD_COMMAND_CENTER_REF and HUD_BUILD.
+# Railway maps same-named env vars to Dockerfile ARG (see Dockerfile ARG HUD_BUILD).
+# Bumping HUD_BUILD (e.g. 2026-09-13-phase1-jenman) forces a fresh HUD clone.
 [build]
 builder = "DOCKERFILE"
 dockerfilePath = "Dockerfile"
