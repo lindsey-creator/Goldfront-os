@@ -25,12 +25,21 @@ def test_normalize_model_default_and_case():
     assert engines.normalize_model("MUSE") == "muse"
 
 
+def test_normalize_model_covers_every_lane():
+    assert engines.normalize_model("chatgpt") == "chatgpt"
+    assert engines.normalize_model("OpenAI") == "chatgpt"
+    assert engines.normalize_model("gpt") == "chatgpt"
+    assert engines.normalize_model("Gemini") == "gemini"
+    assert engines.normalize_model("google") == "gemini"
+
+
 def test_normalize_model_rejects_unknown():
     try:
-        engines.normalize_model("chatgpt")
+        engines.normalize_model("llama")
     except ValueError as exc:
         assert "claude" in str(exc)
         assert "grok" in str(exc)
+        assert "chatgpt" in str(exc)
     else:
         raise AssertionError("expected ValueError")
 
@@ -38,6 +47,9 @@ def test_normalize_model_rejects_unknown():
 def test_health_flags_never_include_secret_values(monkeypatch):
     monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-secret-do-not-leak")
     monkeypatch.setenv("XAI_API_KEY", "xai-secret-do-not-leak")
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-openai-secret-do-not-leak")
+    monkeypatch.setenv("GEMINI_API_KEY", "gemini-secret-do-not-leak")
+    monkeypatch.delenv("GOOGLE_AI_API_KEY", raising=False)
     monkeypatch.delenv("MUSE_WEBHOOK_URL", raising=False)
     monkeypatch.delenv("MUSE_API_URL", raising=False)
     monkeypatch.delenv("MUSE_WEBHOOK", raising=False)
@@ -46,7 +58,15 @@ def test_health_flags_never_include_secret_values(monkeypatch):
     blob = str(flags)
     assert "sk-ant" not in blob
     assert "xai-secret" not in blob
-    assert flags["engines"] == {"claude": True, "grok": True, "muse": False}
+    assert "sk-openai" not in blob
+    assert "gemini-secret" not in blob
+    assert flags["engines"] == {
+        "claude": True,
+        "chatgpt": True,
+        "gemini": True,
+        "grok": True,
+        "muse": False,
+    }
     assert flags["xai"] is True
     assert flags["anthropic"] is True
     assert flags["muse"] is False
@@ -124,7 +144,7 @@ def test_chat_claude_default_still_works_without_key(monkeypatch):
 def test_chat_unknown_model_honest_error(monkeypatch):
     monkeypatch.setattr("brain.agent.chat_actions.try_chat_action", lambda msg: None)
     client = _client(monkeypatch)
-    r = client.post("/chat", json={"message": "hi", "model": "chatgpt"})
+    r = client.post("/chat", json={"message": "hi", "model": "llama"})
     assert r.status_code == 200
     body = r.json()
     assert body["mode"] == "error"
@@ -206,3 +226,123 @@ def test_health_stays_responsive_while_chat_is_slow(monkeypatch):
     assert health.json()["status"] == "ok"
     assert elapsed < 0.75, f"/health blocked for {elapsed:.2f}s behind /chat"
     assert chat.status_code == 200
+
+
+def test_chatgpt_without_key_is_honest_not_another_model(monkeypatch):
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    monkeypatch.setattr("brain.agent.chat_actions.try_chat_action", lambda msg: None)
+
+    client = _client(monkeypatch)
+    r = client.post("/chat", json={"message": "ping", "model": "ChatGPT"})
+    assert r.status_code == 200
+    body = r.json()
+    assert body["mode"] == "chatgpt"
+    assert body["answer"] is None
+    assert "OPENAI_API_KEY" in (body.get("error") or "")
+    assert body["mode"] not in ("claude", "fallback", "grok")
+
+
+def test_gemini_without_key_is_honest_not_another_model(monkeypatch):
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+    monkeypatch.delenv("GOOGLE_AI_API_KEY", raising=False)
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    monkeypatch.setattr("brain.agent.chat_actions.try_chat_action", lambda msg: None)
+
+    client = _client(monkeypatch)
+    r = client.post("/chat", json={"message": "ping", "model": "gemini"})
+    assert r.status_code == 200
+    body = r.json()
+    assert body["mode"] == "gemini"
+    assert body["answer"] is None
+    assert "GEMINI_API_KEY" in (body.get("error") or "")
+    assert body["mode"] not in ("claude", "fallback", "grok")
+
+
+def test_gemini_oauth_pair_alone_does_not_enable_gemini(monkeypatch):
+    """Calendar/Gmail OAuth is not an AI Studio key — the lane must stay dark."""
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+    monkeypatch.delenv("GOOGLE_AI_API_KEY", raising=False)
+    monkeypatch.setenv("GOOGLE_CLIENT_ID", "oauth-client-id")
+    monkeypatch.setenv("GOOGLE_CLIENT_SECRET", "oauth-client-secret")
+    assert engines.gemini_ready() is False
+
+
+def test_chatgpt_calls_openai_not_anthropic(monkeypatch):
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-openai-test")
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    monkeypatch.setattr("brain.agent.chat_actions.try_chat_action", lambda msg: None)
+
+    seen = {}
+
+    class FakeResp:
+        status_code = 200
+
+        def json(self):
+            return {"choices": [{"message": {"content": "ChatGPT lane live."}}]}
+
+    class FakeClient:
+        def __init__(self, *a, **k):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *a):
+            return False
+
+        async def post(self, url, **kwargs):
+            seen["url"] = url
+            seen["auth"] = kwargs.get("headers", {}).get("Authorization")
+            seen["model"] = kwargs.get("json", {}).get("model")
+            return FakeResp()
+
+    with patch("brain.agent.engines.httpx.AsyncClient", FakeClient):
+        client = _client(monkeypatch)
+        r = client.post("/chat", json={"message": "ping", "model": "chatgpt"})
+
+    body = r.json()
+    assert body["mode"] == "chatgpt"
+    assert body["answer"] == "ChatGPT lane live."
+    assert seen["url"] == engines.OPENAI_CHAT_URL
+    assert "api.anthropic.com" not in seen["url"]
+    assert seen["auth"] == "Bearer sk-openai-test"
+
+
+def test_gemini_sends_key_as_header_never_in_url(monkeypatch):
+    monkeypatch.setenv("GEMINI_API_KEY", "gemini-test-key")
+    monkeypatch.setattr("brain.agent.chat_actions.try_chat_action", lambda msg: None)
+
+    seen = {}
+
+    class FakeResp:
+        status_code = 200
+
+        def json(self):
+            return {"candidates": [{"content": {"parts": [{"text": "Gemini lane live."}]}}]}
+
+    class FakeClient:
+        def __init__(self, *a, **k):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *a):
+            return False
+
+        async def post(self, url, **kwargs):
+            seen["url"] = url
+            seen["headers"] = kwargs.get("headers", {})
+            return FakeResp()
+
+    with patch("brain.agent.engines.httpx.AsyncClient", FakeClient):
+        client = _client(monkeypatch)
+        r = client.post("/chat", json={"message": "ping", "model": "gemini"})
+
+    body = r.json()
+    assert body["mode"] == "gemini"
+    assert body["answer"] == "Gemini lane live."
+    # The key must never land in a URL — query strings get logged by proxies.
+    assert "gemini-test-key" not in seen["url"]
+    assert seen["headers"]["x-goog-api-key"] == "gemini-test-key"

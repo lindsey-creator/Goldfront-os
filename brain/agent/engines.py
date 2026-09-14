@@ -1,9 +1,11 @@
 """
-Multi-model chat routing for /chat (claude | grok | muse).
+Multi-model chat routing for /chat (claude | chatgpt | gemini | grok | muse).
 
 HUD chips read GET /health flags. Never put secret values in health or errors.
-Grok uses xAI Chat Completions. Missing XAI_API_KEY is an honest grok error —
-never a silent Claude fallback. Muse without a webhook/API URL is disconnected.
+Grok and ChatGPT both speak the OpenAI Chat Completions shape and share one
+client; Gemini uses Google generateContent. A missing key for any lane is an
+honest error for THAT lane — never a silent fallback to another model.
+Muse without a webhook/API URL is disconnected.
 """
 
 from __future__ import annotations
@@ -18,10 +20,19 @@ import httpx
 from brain.agent import reasoning
 from brain.persona.persona import build_persona_prompt
 
-CHAT_MODELS = ("claude", "grok", "muse")
+CHAT_MODELS = ("claude", "chatgpt", "gemini", "grok", "muse")
 CHAT_TIMEOUT_SECONDS = 75.0
+
 XAI_CHAT_URL = "https://api.x.ai/v1/chat/completions"
 DEFAULT_GROK_MODEL = "grok-4"
+
+OPENAI_CHAT_URL = "https://api.openai.com/v1/chat/completions"
+DEFAULT_OPENAI_MODEL = "gpt-4o"
+
+GEMINI_URL_TEMPLATE = (
+    "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
+)
+DEFAULT_GEMINI_MODEL = "gemini-2.0-flash"
 
 # Dedicated pool so sync Anthropic / KB work cannot occupy FastAPI's default
 # threadpool (Talk Mode hammers many GET handlers that also use it).
@@ -30,6 +41,7 @@ _llm_slots: asyncio.Semaphore | None = None
 
 _MUSE_URL_ENV = ("MUSE_WEBHOOK_URL", "MUSE_API_URL", "MUSE_WEBHOOK")
 _MUSE_KEY_ENV = ("MUSE_API_KEY", "MUSE_WEBHOOK_SECRET")
+_GEMINI_KEY_ENV = ("GEMINI_API_KEY", "GOOGLE_AI_API_KEY")
 
 
 def _env_set(name: str) -> bool:
@@ -42,6 +54,23 @@ def anthropic_ready() -> bool:
 
 def xai_ready() -> bool:
     return _env_set("XAI_API_KEY")
+
+
+def openai_ready() -> bool:
+    return _env_set("OPENAI_API_KEY")
+
+
+def gemini_ready() -> bool:
+    """GEMINI_API_KEY is the Google AI Studio key — NOT the Calendar/Gmail OAuth pair."""
+    return any(_env_set(name) for name in _GEMINI_KEY_ENV)
+
+
+def _first_env(names: tuple[str, ...]) -> str:
+    for name in names:
+        value = (os.getenv(name) or "").strip()
+        if value:
+            return value
+    return ""
 
 
 def muse_ready() -> bool:
@@ -65,29 +94,62 @@ def grok_model_name() -> str:
     )
 
 
+def openai_model_name() -> str:
+    return (os.getenv("OPENAI_MODEL") or "").strip() or DEFAULT_OPENAI_MODEL
+
+
+def gemini_model_name() -> str:
+    return (os.getenv("GEMINI_MODEL") or "").strip() or DEFAULT_GEMINI_MODEL
+
+
 def health_flags() -> dict[str, Any]:
     """Booleans only — never secret values. Shape the HUD chips already read."""
     claude = anthropic_ready()
+    chatgpt = openai_ready()
+    gemini = gemini_ready()
     grok = xai_ready()
     muse = muse_ready()
-    models = [name for name, ok in (("claude", claude), ("grok", grok), ("muse", muse)) if ok]
+    ready = (
+        ("claude", claude),
+        ("chatgpt", chatgpt),
+        ("gemini", gemini),
+        ("grok", grok),
+        ("muse", muse),
+    )
+    engines = {name: ok for name, ok in ready}
     return {
-        "engines": {"claude": claude, "grok": grok, "muse": muse},
+        "engines": engines,
+        # Legacy top-level keys the current HUD already reads — keep them.
         "xai": grok,
         "anthropic": claude,
         "muse": muse,
-        "models": models,
-        "keys": {"xai": grok, "anthropic": claude, "muse": muse},
+        "openai": chatgpt,
+        "gemini": gemini,
+        "models": [name for name, ok in ready if ok],
+        "keys": {
+            "xai": grok,
+            "anthropic": claude,
+            "muse": muse,
+            "openai": chatgpt,
+            "gemini": gemini,
+        },
     }
 
 
 def normalize_model(raw: str | None) -> str:
-    """Return claude|grok|muse or raise ValueError. Case-insensitive; default claude."""
+    """Return a CHAT_MODELS lane or raise ValueError. Case-insensitive; default claude."""
     name = (raw or "claude").strip().lower()
     aliases = {
         "": "claude",
         "claude": "claude",
         "anthropic": "claude",
+        "chatgpt": "chatgpt",
+        "openai": "chatgpt",
+        "gpt": "chatgpt",
+        "gpt-4o": "chatgpt",
+        "gemini": "gemini",
+        "google": "gemini",
+        "bard": "gemini",
         "grok": "grok",
         "xai": "grok",
         "grok-4": "grok",
@@ -96,7 +158,9 @@ def normalize_model(raw: str | None) -> str:
     }
     mapped = aliases.get(name)
     if mapped is None:
-        raise ValueError(f"Unknown model {raw!r}. Use claude, grok, or muse.")
+        raise ValueError(
+            f"Unknown model {raw!r}. Use {', '.join(CHAT_MODELS)}."
+        )
     return mapped
 
 
@@ -107,15 +171,32 @@ def _llm_semaphore() -> asyncio.Semaphore:
     return _llm_slots
 
 
-def _missing_grok(engine: dict | None) -> dict:
+def _not_claude_suffix(lane: str) -> str:
+    """
+    Claude is the default lane, so a failure in any other lane must say so
+    outright — a user seeing prose here should never wonder whether Claude
+    quietly answered instead. Asserted by test_chat_engines.
+    """
+    return "" if lane == "claude" else " This is not Claude."
+
+
+def _missing_key(lane: str, env_name: str, engine: dict | None) -> dict:
+    """Honest per-lane failure. Never falls back to another model."""
     return {
         "answer": None,
-        "error": "XAI_API_KEY is not set on the Brain.",
-        "note": "Grok is not available — XAI_API_KEY is not set. This is not Claude.",
+        "error": f"{env_name} is not set on the Brain.",
+        "note": (
+            f"{lane} is not available — {env_name} is not set."
+            f" Add it in Settings.{_not_claude_suffix(lane)}"
+        ),
         "engine": engine,
         "draft": None,
-        "mode": "grok",
+        "mode": lane,
     }
+
+
+def _missing_grok(engine: dict | None) -> dict:
+    return _missing_key("grok", "XAI_API_KEY", engine)
 
 
 def _muse_disconnected(engine: dict | None) -> dict:
@@ -164,41 +245,64 @@ def _claude_sync(message: str, kb, engine: dict | None, wants_draft: bool) -> di
     return reasoning.answer(message, kb=kb, engine=engine, wants_draft=wants_draft)
 
 
-def _parse_xai_text(payload: dict) -> str:
+def _parse_openai_text(payload: dict, provider: str) -> str:
+    """Both xAI and OpenAI return the same Chat Completions envelope."""
     choices = payload.get("choices") or []
     if not choices:
-        raise ValueError("xAI returned no choices")
+        raise ValueError(f"{provider} returned no choices")
     message = choices[0].get("message") or {}
     text = (message.get("content") or "").strip()
     if not text:
-        raise ValueError("xAI returned an empty message")
+        raise ValueError(f"{provider} returned an empty message")
     return text
 
 
-async def _grok_async(
+def _parse_xai_text(payload: dict) -> str:
+    """Back-compat shim — existing callers and tests use this name."""
+    return _parse_openai_text(payload, "xAI")
+
+
+def _provider_error(lane: str, detail: str, engine: dict | None) -> dict:
+    return {
+        "answer": None,
+        "error": detail,
+        "note": f"{lane} request failed.{_not_claude_suffix(lane)}",
+        "engine": engine,
+        "draft": None,
+        "mode": lane,
+    }
+
+
+async def _openai_compatible_async(
+    lane: str,
+    url: str,
+    api_key: str,
+    model_name: str,
+    provider: str,
     message: str,
     kb,
     engine: dict | None,
     wants_draft: bool,
 ) -> dict:
-    if not xai_ready():
-        return _missing_grok(engine)
-
+    """
+    One client for every provider speaking OpenAI Chat Completions.
+    Grok (api.x.ai) and ChatGPT (api.openai.com) differ only in URL, key and
+    model name, so they share this path rather than duplicating it.
+    """
     system, user, _memory = await asyncio.to_thread(
         _prepare_context, message, kb, engine, wants_draft
     )
-    key = (os.getenv("XAI_API_KEY") or "").strip()
     timeout = httpx.Timeout(CHAT_TIMEOUT_SECONDS, connect=10.0)
     try:
         async with httpx.AsyncClient(timeout=timeout) as client:
             resp = await client.post(
-                XAI_CHAT_URL,
+                url,
                 headers={
-                    "Authorization": f"Bearer {key}",
+                    "Authorization": f"Bearer {api_key}",
                     "Content-Type": "application/json",
                 },
                 json={
-                    "model": grok_model_name(),
+                    "model": model_name,
                     "messages": [
                         {"role": "system", "content": system},
                         {"role": "user", "content": user},
@@ -207,37 +311,97 @@ async def _grok_async(
                 },
             )
     except httpx.TimeoutException:
-        return _timeout_error("grok", engine)
+        return _timeout_error(lane, engine)
     except Exception as exc:
-        return {
-            "answer": None,
-            "error": str(exc),
-            "note": "Grok request failed. This is not Claude.",
-            "engine": engine,
-            "draft": None,
-            "mode": "grok",
-        }
+        return _provider_error(lane, str(exc), engine)
 
     if resp.status_code >= 400:
-        return {
-            "answer": None,
-            "error": f"xAI returned HTTP {resp.status_code}",
-            "note": "Grok request failed. This is not Claude.",
-            "engine": engine,
-            "draft": None,
-            "mode": "grok",
-        }
+        return _provider_error(lane, f"{provider} returned HTTP {resp.status_code}", engine)
     try:
-        text = _parse_xai_text(resp.json())
+        text = _parse_openai_text(resp.json(), provider)
     except Exception as exc:
-        return {
-            "answer": None,
-            "error": str(exc),
-            "engine": engine,
-            "draft": None,
-            "mode": "grok",
-        }
-    return _pack_text(text, engine, wants_draft, "grok")
+        return _provider_error(lane, str(exc), engine)
+    return _pack_text(text, engine, wants_draft, lane)
+
+
+async def _grok_async(message: str, kb, engine: dict | None, wants_draft: bool) -> dict:
+    if not xai_ready():
+        return _missing_key("grok", "XAI_API_KEY", engine)
+    return await _openai_compatible_async(
+        "grok",
+        XAI_CHAT_URL,
+        (os.getenv("XAI_API_KEY") or "").strip(),
+        grok_model_name(),
+        "xAI",
+        message, kb, engine, wants_draft,
+    )
+
+
+async def _chatgpt_async(message: str, kb, engine: dict | None, wants_draft: bool) -> dict:
+    if not openai_ready():
+        return _missing_key("chatgpt", "OPENAI_API_KEY", engine)
+    return await _openai_compatible_async(
+        "chatgpt",
+        OPENAI_CHAT_URL,
+        (os.getenv("OPENAI_API_KEY") or "").strip(),
+        openai_model_name(),
+        "OpenAI",
+        message, kb, engine, wants_draft,
+    )
+
+
+def _parse_gemini_text(payload: dict) -> str:
+    candidates = payload.get("candidates") or []
+    if not candidates:
+        blocked = (payload.get("promptFeedback") or {}).get("blockReason")
+        raise ValueError(
+            f"Gemini returned no candidates{f' (blocked: {blocked})' if blocked else ''}"
+        )
+    parts = ((candidates[0].get("content") or {}).get("parts")) or []
+    text = "".join(str(part.get("text") or "") for part in parts).strip()
+    if not text:
+        raise ValueError("Gemini returned an empty message")
+    return text
+
+
+async def _gemini_async(message: str, kb, engine: dict | None, wants_draft: bool) -> dict:
+    """
+    Google generateContent. Different envelope from OpenAI: the system prompt
+    goes in system_instruction, and the reply is candidates[].content.parts[].
+    """
+    if not gemini_ready():
+        return _missing_key("gemini", "GEMINI_API_KEY", engine)
+
+    system, user, _memory = await asyncio.to_thread(
+        _prepare_context, message, kb, engine, wants_draft
+    )
+    key = _first_env(_GEMINI_KEY_ENV)
+    url = GEMINI_URL_TEMPLATE.format(model=gemini_model_name())
+    timeout = httpx.Timeout(CHAT_TIMEOUT_SECONDS, connect=10.0)
+    try:
+        async with httpx.AsyncClient(timeout=timeout) as client:
+            resp = await client.post(
+                url,
+                # Key travels as a header, never in the URL — query strings end
+                # up in proxy and access logs.
+                headers={"x-goog-api-key": key, "Content-Type": "application/json"},
+                json={
+                    "system_instruction": {"parts": [{"text": system}]},
+                    "contents": [{"role": "user", "parts": [{"text": user}]}],
+                },
+            )
+    except httpx.TimeoutException:
+        return _timeout_error("gemini", engine)
+    except Exception as exc:
+        return _provider_error("gemini", str(exc), engine)
+
+    if resp.status_code >= 400:
+        return _provider_error("gemini", f"Google returned HTTP {resp.status_code}", engine)
+    try:
+        text = _parse_gemini_text(resp.json())
+    except Exception as exc:
+        return _provider_error("gemini", str(exc), engine)
+    return _pack_text(text, engine, wants_draft, "gemini")
 
 
 async def _muse_async(message: str, engine: dict | None, wants_draft: bool) -> dict:
@@ -347,6 +511,10 @@ async def answer_async(
     async with _llm_semaphore():
         if lane == "grok":
             return await _grok_async(message, kb, engine, wants_draft)
+        if lane == "chatgpt":
+            return await _chatgpt_async(message, kb, engine, wants_draft)
+        if lane == "gemini":
+            return await _gemini_async(message, kb, engine, wants_draft)
         if lane == "muse":
             return await _muse_async(message, engine, wants_draft)
         return await _claude_async(message, kb, engine, wants_draft)

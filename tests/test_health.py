@@ -1,5 +1,6 @@
 from fastapi.testclient import TestClient
 
+from brain.agent import engines
 from brain.main import app
 
 
@@ -14,7 +15,7 @@ def test_health_includes_jarvis_command():
     assert body["glass"] == "conrad-command-center"
     assert "ui_built" in body
     assert "engines" in body
-    assert set(body["engines"]) == {"claude", "grok", "muse"}
+    assert set(body["engines"]) == set(engines.CHAT_MODELS)
     assert isinstance(body["engines"]["claude"], bool)
     assert isinstance(body["engines"]["grok"], bool)
     assert isinstance(body["engines"]["muse"], bool)

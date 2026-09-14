@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from datetime import datetime, timedelta, timezone
+
 import json
 from unittest.mock import MagicMock, patch
 
@@ -127,16 +129,31 @@ def test_clickup_fetch_tasks_and_overdue(monkeypatch):
         mock_get.assert_called()
 
 
+def _recent_task_dates(days: int = 3) -> tuple[str, str]:
+    """
+    (name_prefix, date_created_ms) for a task `days` ago.
+
+    _parse_task_date reads the MM-DD in the task NAME first and only falls back
+    to date_created, so both have to move together — pinning either to a literal
+    date silently rots out of the days_back window as real time passes.
+    """
+    when = datetime.now(timezone.utc) - timedelta(days=days)
+    return when.strftime("%m-%d"), str(int(when.timestamp() * 1000))
+
+
+_RECENT_MMDD, _RECENT_CREATED_MS = _recent_task_dates(3)
+
+
 def test_clickup_transcript_task_record(monkeypatch):
     monkeypatch.setenv("CLICKUP_API_TOKEN", "pk_test")
     monkeypatch.setenv("CLICKUP_WORKSPACE_ID", "90141259054")
 
     transcript_task = {
         "id": "tx1",
-        "name": "07-02 Consultation: Onboarding",
+        "name": f"{_RECENT_MMDD} Consultation: Onboarding",
         "description": "",
         "url": "https://app.clickup.com/t/tx1",
-        "date_created": "1783364023396",
+        "date_created": _RECENT_CREATED_MS,
         "list": {"name": "📥 Inbox — Raw Transcripts"},
         "folder": {"name": "Plaud Meeting Notes"},
         "space": {"name": "Team Space"},
