@@ -112,7 +112,7 @@ def test_get_task_endpoint_ok(clickup_configured, monkeypatch):
 
     from brain.main import app
 
-    monkeypatch.setattr("brain.main.startup_clickup_sync", lambda: None)
+    monkeypatch.setattr("brain.main.startup_background", lambda: None)
     monkeypatch.setattr(
         clickup,
         "fetch_task_detail",
@@ -135,7 +135,7 @@ def test_get_task_endpoint_not_configured(monkeypatch):
 
     from brain.main import app
 
-    monkeypatch.setattr("brain.main.startup_clickup_sync", lambda: None)
+    monkeypatch.setattr("brain.main.startup_background", lambda: None)
     client = TestClient(app)
     resp = client.get("/clickup/tasks/abc")
     assert resp.status_code == 200
@@ -156,7 +156,7 @@ def test_comment_endpoint_ok(clickup_configured, monkeypatch):
         captured["text"] = text
         return {"id": "c99"}
 
-    monkeypatch.setattr("brain.main.startup_clickup_sync", lambda: None)
+    monkeypatch.setattr("brain.main.startup_background", lambda: None)
     monkeypatch.setattr(clickup, "add_comment", fake_add_comment)
     client = TestClient(app)
     resp = client.post(
@@ -176,7 +176,7 @@ def test_comment_endpoint_requires_text(clickup_configured, monkeypatch):
 
     from brain.main import app
 
-    monkeypatch.setattr("brain.main.startup_clickup_sync", lambda: None)
+    monkeypatch.setattr("brain.main.startup_background", lambda: None)
     client = TestClient(app)
     resp = client.post("/clickup/tasks/task-7/comment", json={"text": "   "})
     assert resp.status_code == 400
@@ -190,7 +190,7 @@ def test_comment_endpoint_not_configured(monkeypatch):
 
     from brain.main import app
 
-    monkeypatch.setattr("brain.main.startup_clickup_sync", lambda: None)
+    monkeypatch.setattr("brain.main.startup_background", lambda: None)
     client = TestClient(app)
     resp = client.post(
         "/clickup/tasks/task-1/comment",

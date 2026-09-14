@@ -170,7 +170,7 @@ def test_clickup_api_error_maps_to_400(clickup_configured, monkeypatch):
 
     from brain.main import app
 
-    monkeypatch.setattr("brain.main.startup_clickup_sync", lambda: None)
+    monkeypatch.setattr("brain.main.startup_background", lambda: None)
 
     def boom(*_a, **_k):
         raise clickup.ClickUpAPIError(
@@ -192,7 +192,7 @@ def test_clickup_reopen_endpoint_ok(clickup_configured, monkeypatch):
 
     from brain.main import app
 
-    monkeypatch.setattr("brain.main.startup_clickup_sync", lambda: None)
+    monkeypatch.setattr("brain.main.startup_background", lambda: None)
     monkeypatch.setattr(
         clickup,
         "reopen_task",
@@ -253,7 +253,7 @@ def test_clickup_patch_endpoint_not_configured(monkeypatch):
 
     from brain.main import app
 
-    monkeypatch.setattr("brain.main.startup_clickup_sync", lambda: None)
+    monkeypatch.setattr("brain.main.startup_background", lambda: None)
     client = TestClient(app)
     resp = client.patch("/clickup/tasks/abc", json={"status": "complete"})
     assert resp.status_code == 200
@@ -267,7 +267,7 @@ def test_clickup_complete_endpoint_ok(clickup_configured, monkeypatch):
 
     from brain.main import app
 
-    monkeypatch.setattr("brain.main.startup_clickup_sync", lambda: None)
+    monkeypatch.setattr("brain.main.startup_background", lambda: None)
     monkeypatch.setattr(
         clickup,
         "complete_task",
@@ -287,7 +287,7 @@ def test_clickup_patch_endpoint_api_error(clickup_configured, monkeypatch):
 
     from brain.main import app
 
-    monkeypatch.setattr("brain.main.startup_clickup_sync", lambda: None)
+    monkeypatch.setattr("brain.main.startup_background", lambda: None)
 
     def boom(*_a, **_k):
         raise clickup.ClickUpAPIError(

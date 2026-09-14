@@ -107,7 +107,7 @@ def test_cockpit_http_endpoints_return_200(kb, no_connectors, monkeypatch):
     from brain.main import app
 
     # Avoid live ClickUp ingest + background startup thread during TestClient lifespan.
-    monkeypatch.setattr("brain.main.startup_clickup_sync", lambda: None)
+    monkeypatch.setattr("brain.main.startup_background", lambda: None)
     monkeypatch.setattr("brain.cockpit.read.maybe_sync", lambda *a, **k: None)
 
     client = TestClient(app)
