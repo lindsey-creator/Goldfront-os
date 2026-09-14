@@ -152,7 +152,7 @@ def test_members_endpoint_not_configured(monkeypatch):
 
     from brain.main import app
 
-    monkeypatch.setattr("brain.main.startup_clickup_sync", lambda: None)
+    monkeypatch.setattr("brain.main.startup_background", lambda: None)
     client = TestClient(app)
     resp = client.get("/clickup/members")
     assert resp.status_code == 200
@@ -166,7 +166,7 @@ def test_assign_endpoint_ok(clickup_configured, monkeypatch):
 
     from brain.main import app
 
-    monkeypatch.setattr("brain.main.startup_clickup_sync", lambda: None)
+    monkeypatch.setattr("brain.main.startup_background", lambda: None)
     monkeypatch.setattr(
         clickup,
         "assign_task",
@@ -194,7 +194,7 @@ def test_assign_endpoint_with_note(clickup_configured, monkeypatch):
         captured.update(kwargs)
         return {"id": task_id}
 
-    monkeypatch.setattr("brain.main.startup_clickup_sync", lambda: None)
+    monkeypatch.setattr("brain.main.startup_background", lambda: None)
     monkeypatch.setattr(clickup, "assign_task", fake_assign)
     monkeypatch.setattr(
         clickup,

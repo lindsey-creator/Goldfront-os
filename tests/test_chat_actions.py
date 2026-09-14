@@ -69,7 +69,7 @@ def test_chat_endpoint_runs_action(monkeypatch):
 
     from brain.main import app
 
-    monkeypatch.setattr("brain.main.startup_clickup_sync", lambda: None)
+    monkeypatch.setattr("brain.main.startup_background", lambda: None)
     monkeypatch.setattr(
         chat_actions,
         "try_chat_action",
