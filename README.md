@@ -31,9 +31,10 @@ auto-classification, deal-decision training with divergence flagging, team +
 conversation training, decision history, importers for bulk/Apollo/ClickUp/Fieldy),
 **shadow-mode validation** (does the Brain match your real calls yet?), and the
 **Cockpit read endpoints**, and the **persona + reasoning agent** (`/chat`) that
-answers in Lindsey's voice (Claude when `ANTHROPIC_API_KEY` is set, honest fallback
-otherwise — always narrates engine numbers, never computes them). Runs with no API
-key and no ChromaDB (JSON memory fallback).
+answers in Lindsey's voice — Claude when `ANTHROPIC_API_KEY` is set, Grok when
+`XAI_API_KEY` is set (`model=grok`), honest errors for missing engines (never a
+fake Claude reply). Always narrates engine numbers, never computes them. Runs with
+no API key and no ChromaDB (JSON memory fallback).
 
 ```bash
 python -m venv .venv && source .venv/bin/activate

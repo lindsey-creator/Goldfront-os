@@ -45,7 +45,9 @@ Jarvis on Railway is the **only** command surface. Connectors are read paths int
 | 8 | **Wispr Flow** | OS voice into JARVIS command line | **No API.** See [docs/WISPR-FLOW-JARVIS.md](../docs/WISPR-FLOW-JARVIS.md) | — |
 | 9 | **Manus** | Named builds / legacy box only | **Not** Command Center hosting. Use for one-off scripts or old tunnel only during cutover. | — |
 | 10 | **ChatGPT** | Human-only | Not a fleet connector | — |
-| 11 | **Claude** | Strategy lane; reports **to** Jarvis, not a second chief | `/chat` when `ANTHROPIC_API_KEY` set; reasoning narrates, does not replace Jarvis glass | `ANTHROPIC_API_KEY` |
+| 11 | **Claude** | Strategy lane; reports **to** Jarvis, not a second chief | `/chat` `model=claude` (default) when `ANTHROPIC_API_KEY` set; reasoning narrates, does not replace Jarvis glass | `ANTHROPIC_API_KEY` |
+| 12 | **Grok** | Strategy lane via xAI | `/chat` `model=grok` → `https://api.x.ai/v1/chat/completions`. Honest error if `XAI_API_KEY` missing (never fake Claude). `GET /health` sets `engines.grok` / `xai` so HUD chips flip LIVE | `XAI_API_KEY` |
+| 13 | **Muse** | Optional Muse webhook | `/chat` `model=muse`. Without `MUSE_WEBHOOK_URL` / `MUSE_API_URL`, returns “Muse link not connected” | `MUSE_WEBHOOK_URL` or `MUSE_API_URL` |
 
 Optional: `WEATHER_API_KEY`, `APPLE_HEALTH_EXPORT_PATH` (display-only file path — not typical on Railway), `CLICKUP_MCP_URL`, `DECISION_HALFLIFE_DAYS`.
 
@@ -88,7 +90,9 @@ These are **not** runtime secrets. They must exist as Railway **Variables** (whi
 | Variable | Purpose |
 |----------|---------|
 | `GOLDFRONT_OWNER` | `lindsey` — private brain owner |
-| `ANTHROPIC_API_KEY` | Live `/chat` (Claude lane to Jarvis) |
+| `ANTHROPIC_API_KEY` | Live `/chat` model=claude (default) |
+| `XAI_API_KEY` | Live `/chat` model=grok (xAI Chat Completions). Optional `XAI_MODEL` (default `grok-4`) |
+| `MUSE_WEBHOOK_URL` or `MUSE_API_URL` | Live `/chat` model=muse. Without these, `/health` `engines.muse` is false and `/chat` returns “Muse link not connected” |
 
 ### Connectors (add what you use)
 
@@ -146,7 +150,8 @@ curl -sf "https://jarvis-brain-production-8def.up.railway.app/connectors/status"
 | Meta Ads | `META_ACCESS_TOKEN` + `META_AD_ACCOUNT_ID` |
 | Town radar slot | Gmail **Live** + mail ingest path documented; no Town API in Railway |
 
-**Anthropic** is not listed in `/connectors/status` — test `/chat` or Connections narration.
+**Anthropic / xAI / Muse** are not listed in `/connectors/status` — use `GET /health`
+(`engines`, `xai`, `anthropic`) or `POST /chat` with `model`. Never invent a Grok reply.
 
 ---
 

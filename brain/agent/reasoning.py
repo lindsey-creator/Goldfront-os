@@ -14,6 +14,8 @@ Works with or without an API key:
   • no key                 → an honest structured fallback: it still surfaces the engine's
                              numbers and the retrieved memory, and says plainly that live
                              narration needs a key. It never fabricates a number or a quote.
+
+Grok / Muse routing lives in brain.agent.engines — this module stays the Claude lane.
 """
 
 from __future__ import annotations
@@ -71,6 +73,17 @@ def _fallback(message: str, engine: dict | None, memory: dict, wants_draft: bool
     }
 
 
+def user_payload(message: str, engine: dict | None, memory: dict, wants_draft: bool) -> str:
+    """Shared user turn for Claude and Grok — engine numbers stay authoritative."""
+    context = {"engine_output": engine, "retrieved_memory": memory, "wants_draft": wants_draft}
+    return (
+        f"{message}\n\n---\nCONTEXT (engine numbers are authoritative; do not recompute):\n"
+        f"{context}\n\n"
+        "If you draft any outbound message, put it under a clear 'DRAFT:' heading — it goes "
+        "to the Approval Queue, do not treat it as sent."
+    )
+
+
 def _claude(system: str, message: str, engine: dict | None, memory: dict, wants_draft: bool) -> dict | None:
     key = os.getenv("ANTHROPIC_API_KEY")
     if not key:
@@ -80,15 +93,10 @@ def _claude(system: str, message: str, engine: dict | None, memory: dict, wants_
     except ImportError:
         return None
     try:
-        client = anthropic.Anthropic(api_key=key)
+        # Hard timeout so a hung Anthropic call cannot occupy a worker forever.
+        client = anthropic.Anthropic(api_key=key, timeout=75.0)
         model = os.getenv("GOLDFRONT_REASON_MODEL", "claude-sonnet-5")
-        context = {"engine_output": engine, "retrieved_memory": memory, "wants_draft": wants_draft}
-        user = (
-            f"{message}\n\n---\nCONTEXT (engine numbers are authoritative; do not recompute):\n"
-            f"{context}\n\n"
-            "If you draft any outbound message, put it under a clear 'DRAFT:' heading — it goes "
-            "to the Approval Queue, do not treat it as sent."
-        )
+        user = user_payload(message, engine, memory, wants_draft)
         resp = client.messages.create(
             model=model,
             max_tokens=1200,

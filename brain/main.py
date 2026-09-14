@@ -5,12 +5,14 @@ Run:  uvicorn brain.main:app --reload
 
 What works today: /health, /evaluate-deal (pure engine), and the full training
 loop, shadow validation, cockpit read endpoints, AND the persona + reasoning
-agent (/chat) — Claude when ANTHROPIC_API_KEY is set, honest fallback otherwise.
+agent (/chat) — Claude (default), Grok via XAI_API_KEY, Muse when a webhook is
+linked. Missing engines return honest JSON, never a fake Claude reply.
 The agent narrates engine numbers, never computes them; drafts require approval.
 """
 
 from __future__ import annotations
 
+import asyncio
 import threading
 
 from dotenv import load_dotenv
@@ -26,7 +28,7 @@ from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from brain.agent import reasoning
+from brain.agent import engines
 from brain.agent.chat_actions import try_chat_action
 from brain.approvals import queue as approval_queue
 from brain.cockpit.read import CockpitRead
@@ -79,6 +81,11 @@ def startup_background() -> None:
     threading.Thread(target=run, daemon=True).start()
 
 
+@app.on_event("shutdown")
+def shutdown_llm_pool() -> None:
+    engines.shutdown()
+
+
 class DealRequest(BaseModel):
     purchase_price: float
     rehab_estimate: float
@@ -90,15 +97,21 @@ class DealRequest(BaseModel):
 
 
 @app.get("/health")
-def health():
-    """Liveness for load balancers and Command Center 'JARVIS live' indicator."""
-    return {
+async def health():
+    """
+    Cheap liveness + engine presence flags (no secrets).
+    Async so Talk Mode GET storms / a blocked LLM thread cannot stall this.
+    HUD chips read engines / xai / anthropic / muse.
+    """
+    body = {
         "status": "ok",
         "service": "goldfront-brain",
         "command": "jarvis",
         "glass": "conrad-command-center",
         "ui_built": _COMMAND_CENTER_DIST.is_dir(),
     }
+    body.update(engines.health_flags())
+    return body
 
 
 @app.post("/evaluate-deal")
@@ -615,26 +628,45 @@ def clickup_add_task_comment(task_id: str, body: ClickUpCommentBody):
 # -- Ask the room (reasoning agent, master spec §5.3–5.4) -------------------
 class ChatRequest(BaseModel):
     message: str
+    model: str | None = None  # claude (default) | grok | muse — case-insensitive
     wants_draft: bool = False
     deal: DealRequest | None = None  # optional: include to get engine-grounded narration
 
 
 @app.post("/chat")
-def chat(req: ChatRequest):
+async def chat(req: ChatRequest):
     """
-    Talk to the Brain in Lindsey's voice. If a deal is included, the deterministic
-    engine runs first and the agent narrates those numbers (never computes them).
-    Any draft comes back flagged requires_approval — nothing sends on its own.
+    Talk to the Brain. model=claude|grok|muse (default claude).
+    Async: Claude (sync SDK) runs in a dedicated LLM pool so GET /health and
+    cockpit reads stay responsive while a 60–90s model call is in flight.
+    Missing Grok/Muse credentials return honest JSON — never a fake Claude reply.
     """
-    action = try_chat_action(req.message)
+    try:
+        lane = engines.normalize_model(req.model)
+    except ValueError as exc:
+        return {
+            "answer": None,
+            "error": str(exc),
+            "engine": None,
+            "draft": None,
+            "mode": "error",
+        }
+
+    # ClickUp-style actions can block; keep them off the event loop.
+    action = await asyncio.to_thread(try_chat_action, req.message)
     if action is not None:
         return action
 
     engine = None
     if req.deal is not None:
         engine = evaluate_deal(DealInputs(**req.deal.model_dump()))
-    result = reasoning.answer(
-        req.message, kb=KnowledgeBase(), engine=engine, wants_draft=req.wants_draft
+
+    result = await engines.answer_async(
+        req.message,
+        model=lane,
+        kb=KnowledgeBase(),
+        engine=engine,
+        wants_draft=req.wants_draft,
     )
     draft = result.get("draft")
     if draft:

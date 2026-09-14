@@ -47,11 +47,19 @@ Use **`GET /health`** for a cheap liveness check (200 + JSON). Example:
   "service": "goldfront-brain",
   "command": "jarvis",
   "glass": "conrad-command-center",
-  "ui_built": true
+  "ui_built": true,
+  "engines": {"claude": true, "grok": true, "muse": false},
+  "xai": true,
+  "anthropic": true
 }
 ```
 
 - `ui_built` is `true` when `conrad-command-center/dist` exists on the server (glass can load).
+- `engines` / `xai` / `anthropic` are **presence flags only** (no secret values). HUD chips
+  use these so Grok does not stay “need API key” when `XAI_API_KEY` is set.
+- `POST /chat` accepts `{"message","model"}` where `model` is `claude` (default), `grok`, or
+  `muse` (case-insensitive). Missing Grok/Muse credentials return an honest error — never
+  a fake Claude reply.
 - For connector readiness (GHL, ClickUp, etc.), use **`GET /connectors/status`** — never invent
   business metrics in the health payload.
 
